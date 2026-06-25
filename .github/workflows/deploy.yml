@@ -18,6 +18,7 @@ jobs:
 
     env:
       NEXT_TELEMETRY_DISABLED: 1
+      PM2_HOME: ${{ github.workspace }}\.pm2
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       NEXTAUTH_URL: ${{ secrets.NEXTAUTH_URL }}
       NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
@@ -86,6 +87,11 @@ jobs:
 
       - name: Build Next.js app
         run: npm run build
+
+      - name: Prepare PM2 home
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path $env:PM2_HOME | Out-Null
 
       - name: Start or restart PM2 apps
         shell: powershell
