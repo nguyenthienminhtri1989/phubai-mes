@@ -1,0 +1,76 @@
+name: Deploy PHUBAI-MES
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: phubai-mes-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to Windows Server
+    runs-on: [self-hosted, windows, phubai-mes]
+    timeout-minutes: 30
+
+    env:
+      NODE_ENV: production
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      NEXTAUTH_URL: ${{ secrets.NEXTAUTH_URL }}
+      NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
+      AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
+      AUTH_TRUST_HOST: ${{ secrets.AUTH_TRUST_HOST }}
+      SMTP_HOST: ${{ secrets.SMTP_HOST }}
+      SMTP_PORT: ${{ secrets.SMTP_PORT }}
+      SMTP_USER: ${{ secrets.SMTP_USER }}
+      SMTP_PASS: ${{ secrets.SMTP_PASS }}
+      FEEDBACK_TO: ${{ secrets.FEEDBACK_TO }}
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Create production env file
+        shell: powershell
+        run: |
+          $envLines = @(
+            'DATABASE_URL="' + $env:DATABASE_URL + '"',
+            'NEXTAUTH_URL="' + $env:NEXTAUTH_URL + '"',
+            'NEXTAUTH_SECRET="' + $env:NEXTAUTH_SECRET + '"',
+            'AUTH_SECRET="' + $env:AUTH_SECRET + '"',
+            'AUTH_TRUST_HOST=' + $env:AUTH_TRUST_HOST,
+            'SMTP_HOST="' + $env:SMTP_HOST + '"',
+            'SMTP_PORT="' + $env:SMTP_PORT + '"',
+            'SMTP_USER="' + $env:SMTP_USER + '"',
+            'SMTP_PASS="' + $env:SMTP_PASS + '"',
+            'FEEDBACK_TO="' + $env:FEEDBACK_TO + '"'
+          )
+          Set-Content -LiteralPath .env -Value $envLines -Encoding utf8
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Deploy database migrations
+        run: npx prisma migrate deploy
+
+      - name: Build Next.js app
+        run: npm run build
+
+      - name: Start or restart PM2 apps
+        shell: powershell
+        run: |
+          pm2 startOrRestart ecosystem.config.cjs --update-env
+          pm2 save
+          pm2 status

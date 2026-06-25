@@ -1,9 +1,13 @@
+const path = require("node:path");
+
+const appRoot = __dirname;
+
 module.exports = {
   apps: [
     {
       name: "phubai-mes-web",
-      cwd: "D:/PHUBAI-MES/phubai-mes",
-      script: "node_modules/next/dist/bin/next",
+      cwd: appRoot,
+      script: path.join(appRoot, "node_modules", "next", "dist", "bin", "next"),
       args: "start -p 3002",
       env: {
         NODE_ENV: "production",
@@ -11,8 +15,8 @@ module.exports = {
     },
     {
       name: "phubai-mes-energy-cron",
-      cwd: "D:/PHUBAI-MES/phubai-mes",
-      script: "node_modules/tsx/dist/cli.mjs",
+      cwd: appRoot,
+      script: path.join(appRoot, "node_modules", "tsx", "dist", "cli.mjs"),
       args: "scripts/energy-cron.js",
       interpreter: "node",
       env: {
