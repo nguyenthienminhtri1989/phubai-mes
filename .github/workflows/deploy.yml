@@ -17,7 +17,7 @@ jobs:
     timeout-minutes: 30
 
     env:
-      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: 1
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       NEXTAUTH_URL: ${{ secrets.NEXTAUTH_URL }}
       NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
@@ -76,7 +76,7 @@ jobs:
           Set-Content -LiteralPath .env -Value $envLines -Encoding utf8
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --include=dev
 
       - name: Generate Prisma client
         run: npx prisma generate
