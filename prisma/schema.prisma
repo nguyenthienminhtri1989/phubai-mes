@@ -70,6 +70,7 @@ model PowerMeter {
   transformerId String?
   groupId       String?
   isActive      Boolean           @default(true)
+  type          Int               @default(1) // 1: Hạ thế (1 chỉ số), 2: Trung thế (3 chỉ số Bình thường/Cao điểm/Thấp điểm)
   isAuto        Boolean           @default(false)
   modbusId      Int?
   gatewayIp     String?
@@ -92,12 +93,24 @@ model PowerMeter {
 
 model ElectricityPrice {
   id            String   @id @default(cuid())
-  type          String   @unique @default("NORMAL")
+  type          String   @unique @default("NORMAL") // NORMAL, PEAK, OFF_PEAK
+  name          String   @default("") // Bình thường, Cao điểm, Thấp điểm
   price         Float    @default(0)
+  description   String? // Ghi chú khung giờ
   effectiveFrom DateTime @default(now())
   note          String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+}
+
+model EnergyTypeCategory {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String   @unique
+  note      String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model PowerTelemetry {
@@ -125,6 +138,18 @@ model PowerRecord {
   prevTotal  Float           @default(0)
   currTotal  Float           @default(0)
   consTotal  Float           @default(0)
+
+  // --- Dành cho đồng hồ Trung thế (type = 2) - 3 chỉ số ---
+  prevNormal  Float?
+  currNormal  Float?
+  consNormal  Float?
+  prevPeak    Float?
+  currPeak    Float?
+  consPeak    Float?
+  prevOffPeak Float?
+  currOffPeak Float?
+  consOffPeak Float?
+
   unitPrice  Float           @default(0)
   costTotal  Float           @default(0)
   isReset    Boolean         @default(false)

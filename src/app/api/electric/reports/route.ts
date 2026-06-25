@@ -111,15 +111,18 @@ export async function GET(request: NextRequest) {
 
   const totalConsumption = rows.reduce((sum, row) => sum + row.consTotal, 0);
   const totalCost = rows.reduce((sum, row) => sum + row.costTotal, 0);
+  const totalNormal = rows.reduce((sum, row) => sum + (row.consNormal ?? row.consTotal), 0);
+  const totalPeak = rows.reduce((sum, row) => sum + (row.consPeak ?? 0), 0);
+  const totalOffPeak = rows.reduce((sum, row) => sum + (row.consOffPeak ?? 0), 0);
   const daysWithData = byDateMap.size;
 
   return NextResponse.json({
     summary: {
       totalConsumption,
       totalCost,
-      totalPeak: 0,
-      totalNormal: totalConsumption,
-      totalOffPeak: 0,
+      totalPeak,
+      totalNormal,
+      totalOffPeak,
       avgPerDay: daysWithData ? totalConsumption / daysWithData : 0,
       daysWithData,
       prevPeriodConsumption: 0,

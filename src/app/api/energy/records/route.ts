@@ -38,18 +38,18 @@ export async function POST(request: NextRequest) {
   const body = await request.json();
   const recordDate = toRecordDate(body.recordDate);
   const meterId = String(body.meterId || "");
+  const optionalNumber = (value: unknown) =>
+    value === undefined || value === null || value === "" ? undefined : Number(value);
+
   const values = await buildPowerRecordValues({
     meterId,
     recordDate,
     currTotal: Number(body.currTotal || 0),
-    prevTotal:
-      body.prevTotal === undefined || body.prevTotal === null || body.prevTotal === ""
-        ? undefined
-        : Number(body.prevTotal),
-    unitPrice:
-      body.unitPrice === undefined || body.unitPrice === null || body.unitPrice === ""
-        ? undefined
-        : Number(body.unitPrice),
+    prevTotal: optionalNumber(body.prevTotal),
+    currNormal: optionalNumber(body.currNormal),
+    currPeak: optionalNumber(body.currPeak),
+    currOffPeak: optionalNumber(body.currOffPeak),
+    unitPrice: optionalNumber(body.unitPrice),
   });
 
   const data = await prisma.powerRecord.upsert({

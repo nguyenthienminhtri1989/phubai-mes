@@ -102,30 +102,31 @@ async function upsertMeterGroup(row) {
 }
 
 async function upsertPrice(row) {
-  const note = [row.name, row.description].filter(Boolean).join(" - ") || null;
   await mes.query(
-    `insert into "ElectricityPrice" ("id", "type", "price", "effectiveFrom", "note", "createdAt", "updatedAt")
-     values ($1, $2, $3, $4, $5, now(), now())
+    `insert into "ElectricityPrice" ("id", "type", "name", "price", "description", "effectiveFrom", "createdAt", "updatedAt")
+     values ($1, $2, $3, $4, $5, $6, now(), now())
      on conflict ("type") do update set
+       "name" = excluded."name",
        "price" = excluded."price",
+       "description" = excluded."description",
        "effectiveFrom" = excluded."effectiveFrom",
-       "note" = excluded."note",
        "updatedAt" = now()`,
-    [idMap.price(row.id), row.type || "NORMAL", asNumber(row.price), row.updatedAt || new Date(), note]
+    [idMap.price(row.id), row.type || "NORMAL", row.name || row.type || "NORMAL", asNumber(row.price), row.description, row.updatedAt || new Date()]
   );
 }
 
 async function upsertMeter(row) {
   await mes.query(
     `insert into "PowerMeter" (
-       "id", "code", "name", "meterNo", "transformerId", "groupId", "isActive", "isAuto", "modbusId", "gatewayIp", "gatewayPort", "registerAddr", "tu", "ti", "note", "createdAt", "updatedAt"
-     ) values ($1, $2, $3, null, $4, $5, $6, $7, $8, $9, $10, 0, $11, $12, $13, now(), now())
+       "id", "code", "name", "meterNo", "transformerId", "groupId", "isActive", "type", "isAuto", "modbusId", "gatewayIp", "gatewayPort", "registerAddr", "tu", "ti", "note", "createdAt", "updatedAt"
+     ) values ($1, $2, $3, null, $4, $5, $6, $7, $8, $9, $10, $11, 0, $12, $13, $14, now(), now())
      on conflict ("id") do update set
        "code" = excluded."code",
        "name" = excluded."name",
        "transformerId" = excluded."transformerId",
        "groupId" = excluded."groupId",
        "isActive" = excluded."isActive",
+       "type" = excluded."type",
        "isAuto" = excluded."isAuto",
        "modbusId" = excluded."modbusId",
        "gatewayIp" = excluded."gatewayIp",
@@ -141,6 +142,7 @@ async function upsertMeter(row) {
       row.substationId ? idMap.transformer(row.substationId) : null,
       row.meterGroupId ? idMap.meterGroup(row.meterGroupId) : null,
       asBool(row.isActive),
+      asNumber(row.type, 1),
       asBool(row.isAuto),
       row.modbusId,
       row.gatewayIp,
@@ -176,13 +178,25 @@ async function upsertTelemetry(row) {
 async function upsertRecord(row) {
   await mes.query(
     `insert into "PowerRecord" (
-       "id", "recordDate", "meterId", "dataSource", "prevTotal", "currTotal", "consTotal", "unitPrice", "costTotal", "isReset", "note", "createdBy", "createdAt", "updatedAt"
-     ) values ($1, $2, $3, $4::"PowerDataSource", $5, $6, $7, 0, $8, $9, $10, 'ERP_IMPORT', $11, $12)
+       "id", "recordDate", "meterId", "dataSource", "prevTotal", "currTotal", "consTotal",
+       "prevNormal", "currNormal", "consNormal", "prevPeak", "currPeak", "consPeak",
+       "prevOffPeak", "currOffPeak", "consOffPeak",
+       "unitPrice", "costTotal", "isReset", "note", "createdBy", "createdAt", "updatedAt"
+     ) values ($1, $2, $3, $4::"PowerDataSource", $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 0, $17, $18, $19, 'ERP_IMPORT', $20, $21)
      on conflict ("recordDate", "meterId") do update set
        "dataSource" = excluded."dataSource",
        "prevTotal" = excluded."prevTotal",
        "currTotal" = excluded."currTotal",
        "consTotal" = excluded."consTotal",
+       "prevNormal" = excluded."prevNormal",
+       "currNormal" = excluded."currNormal",
+       "consNormal" = excluded."consNormal",
+       "prevPeak" = excluded."prevPeak",
+       "currPeak" = excluded."currPeak",
+       "consPeak" = excluded."consPeak",
+       "prevOffPeak" = excluded."prevOffPeak",
+       "currOffPeak" = excluded."currOffPeak",
+       "consOffPeak" = excluded."consOffPeak",
        "costTotal" = excluded."costTotal",
        "isReset" = excluded."isReset",
        "note" = excluded."note",
@@ -195,6 +209,15 @@ async function upsertRecord(row) {
       asNumber(row.prevTotal, 0),
       asNumber(row.currTotal, 0),
       asNumber(row.consTotal, 0),
+      row.prevNormal === null || row.prevNormal === undefined ? null : asNumber(row.prevNormal),
+      row.currNormal === null || row.currNormal === undefined ? null : asNumber(row.currNormal),
+      row.consNormal === null || row.consNormal === undefined ? null : asNumber(row.consNormal),
+      row.prevPeak === null || row.prevPeak === undefined ? null : asNumber(row.prevPeak),
+      row.currPeak === null || row.currPeak === undefined ? null : asNumber(row.currPeak),
+      row.consPeak === null || row.consPeak === undefined ? null : asNumber(row.consPeak),
+      row.prevOffPeak === null || row.prevOffPeak === undefined ? null : asNumber(row.prevOffPeak),
+      row.currOffPeak === null || row.currOffPeak === undefined ? null : asNumber(row.currOffPeak),
+      row.consOffPeak === null || row.consOffPeak === undefined ? null : asNumber(row.consOffPeak),
       asNumber(row.costTotal, 0),
       asBool(row.isReset),
       row.note,
@@ -236,7 +259,7 @@ async function main() {
   const prices = (await queryMaybe(erp, 'select id, type, name, price, description, "updatedAt" from electricity_prices order by id')).rows;
   const meters = (await erp.query('select id, code, name, description, type, tu, ti, "isActive", "isAuto", "modbusId", "gatewayIp", "gatewayPort", "factoryId", "substationId", "meterGroupId" from power_meters order by id')).rows;
   const telemetry = (await queryMaybe(erp, 'select id::text as id, timestamp, "meterId", "totalEnergy", "activePower" from power_telemetries order by id')).rows;
-  const records = (await queryMaybe(erp, 'select id, "recordDate", "meterId", "isReset", "dataSource", "prevTotal", "currTotal", "consTotal", "costTotal", note, "createdAt", "updatedAt" from power_records order by "recordDate", "meterId"')).rows;
+  const records = (await queryMaybe(erp, 'select id, "recordDate", "meterId", "isReset", "dataSource", "prevTotal", "currTotal", "consTotal", "prevNormal", "currNormal", "consNormal", "prevPeak", "currPeak", "consPeak", "prevOffPeak", "currOffPeak", "consOffPeak", "costTotal", note, "createdAt", "updatedAt" from power_records order by "recordDate", "meterId"')).rows;
 
   await mes.query("begin");
   try {

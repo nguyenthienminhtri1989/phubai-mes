@@ -15,13 +15,17 @@ export async function POST(request: NextRequest) {
   const data = await prisma.electricityPrice.upsert({
     where: { type },
     update: {
+      name: body.name || undefined,
       price: Number(body.price || 0),
+      description: body.description || null,
       effectiveFrom: body.effectiveFrom ? new Date(body.effectiveFrom) : new Date(),
       note: body.note || null,
     },
     create: {
       type,
+      name: body.name || type,
       price: Number(body.price || 0),
+      description: body.description || null,
       effectiveFrom: body.effectiveFrom ? new Date(body.effectiveFrom) : new Date(),
       note: body.note || null,
     },
@@ -41,7 +45,9 @@ export async function PUT(request: NextRequest) {
   const data = await prisma.electricityPrice.update({
     where: { id },
     data: {
+      name: body.name || undefined,
       price: Number(body.price || 0),
+      description: body.description || null,
       effectiveFrom: body.effectiveFrom ? new Date(body.effectiveFrom) : undefined,
       note: body.note || null,
     },

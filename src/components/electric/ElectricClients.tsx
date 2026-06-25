@@ -78,6 +78,7 @@ type ElectricMeter = {
   transformerId?: string | null;
   groupId?: string | null;
   isActive: boolean;
+  type: number; // 1: Hạ thế, 2: Trung thế
   isAuto: boolean;
   modbusId?: number | null;
   gatewayIp?: string | null;
@@ -94,7 +95,9 @@ type ElectricMeter = {
 type ElectricityPrice = {
   id: string;
   type: string;
+  name: string;
   price: number;
+  description?: string | null;
   effectiveFrom: string;
   note?: string | null;
 };
@@ -107,6 +110,15 @@ type PowerRecord = {
   prevTotal: number;
   currTotal: number;
   consTotal: number;
+  prevNormal?: number | null;
+  currNormal?: number | null;
+  consNormal?: number | null;
+  prevPeak?: number | null;
+  currPeak?: number | null;
+  consPeak?: number | null;
+  prevOffPeak?: number | null;
+  currOffPeak?: number | null;
+  consOffPeak?: number | null;
   unitPrice: number;
   costTotal: number;
   isReset: boolean;
@@ -130,7 +142,7 @@ type EnergyType = {
   id: string;
   code: string;
   name: string;
-  description: string;
+  note?: string | null;
   isActive: boolean;
 };
 
@@ -148,6 +160,9 @@ type ReportData = {
   summary: {
     totalConsumption: number;
     totalCost: number;
+    totalNormal: number;
+    totalPeak: number;
+    totalOffPeak: number;
     avgPerDay: number;
     daysWithData: number;
   };
@@ -213,16 +228,19 @@ export function ElectricCatalogClient() {
   const [transformerModalOpen, setTransformerModalOpen] = useState(false);
   const [meterModalOpen, setMeterModalOpen] = useState(false);
   const [groupModalOpen, setGroupModalOpen] = useState(false);
+  const [energyTypeModalOpen, setEnergyTypeModalOpen] = useState(false);
   const [editingFactory, setEditingFactory] = useState<Factory | null>(null);
   const [editingTransformer, setEditingTransformer] = useState<Transformer | null>(null);
   const [editingMeter, setEditingMeter] = useState<ElectricMeter | null>(null);
   const [editingGroup, setEditingGroup] = useState<MeterGroup | null>(null);
+  const [editingEnergyType, setEditingEnergyType] = useState<EnergyType | null>(null);
   const [meterFilterFactory, setMeterFilterFactory] = useState<string>();
   const [meterFilterTransformer, setMeterFilterTransformer] = useState<string>();
   const [formFactory] = Form.useForm();
   const [formTransformer] = Form.useForm();
   const [formMeter] = Form.useForm();
   const [formGroup] = Form.useForm();
+  const [formEnergyType] = Form.useForm();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -274,7 +292,7 @@ export function ElectricCatalogClient() {
   const openMeter = (record?: ElectricMeter) => {
     setEditingMeter(record || null);
     formMeter.resetFields();
-    formMeter.setFieldsValue(record || { isActive: true, isAuto: false, gatewayPort: 502, registerAddr: 0, tu: 1, ti: 1 });
+    formMeter.setFieldsValue(record || { isActive: true, type: 1, isAuto: false, gatewayPort: 502, registerAddr: 0, tu: 1, ti: 1 });
     setMeterModalOpen(true);
   };
 
@@ -283,6 +301,13 @@ export function ElectricCatalogClient() {
     formGroup.resetFields();
     formGroup.setFieldsValue(record || { isActive: true, sortOrder: 0 });
     setGroupModalOpen(true);
+  };
+
+  const openEnergyType = (record?: EnergyType) => {
+    setEditingEnergyType(record || null);
+    formEnergyType.resetFields();
+    formEnergyType.setFieldsValue(record || { isActive: true });
+    setEnergyTypeModalOpen(true);
   };
 
   const saveFactory = async (values: Record<string, unknown>) => {
@@ -313,6 +338,13 @@ export function ElectricCatalogClient() {
     await load();
   };
 
+  const saveEnergyType = async (values: Record<string, unknown>) => {
+    await fetchJson<EnergyType>("/api/electric/energy-types", postBody(editingEnergyType ? "PUT" : "POST", { ...values, id: editingEnergyType?.id }));
+    message.success("Đã lưu loại điện năng");
+    setEnergyTypeModalOpen(false);
+    await load();
+  };
+
   const filteredTransformers = useMemo(
     () => transformers.filter((item) => !meterFilterFactory || item.factoryId === meterFilterFactory),
     [transformers, meterFilterFactory],
@@ -330,7 +362,7 @@ export function ElectricCatalogClient() {
     { title: "Mã", dataIndex: "code", width: 110, render: (value: string) => <b>{value}</b> },
     { title: "Tên đồng hồ", dataIndex: "name" },
     { title: "Mô tả", dataIndex: "note", render: (value?: string | null) => value || <Text type="secondary">---</Text> },
-    { title: "Loại", render: () => <Tag color="blue">Hạ thế</Tag> },
+    { title: "Loại", dataIndex: "type", render: (value: number) => value === 2 ? <Tag color="purple">Trung thế</Tag> : <Tag color="blue">Hạ thế</Tag> },
     {
       title: "Chế độ",
       dataIndex: "isAuto",
@@ -467,7 +499,18 @@ export function ElectricCatalogClient() {
             {
               key: "energyTypes",
               label: "Loại điện năng",
-              children: <><Alert type="info" showIcon style={{ marginBottom: 12 }} message="MES hiện chưa có model EnergyType riêng; dữ liệu loại điện đang neo theo ElectricityPrice.type." /><Table rowKey="id" loading={loading} dataSource={energyTypes} pagination={false} columns={[{ title: "Mã", dataIndex: "code" }, { title: "Tên loại", dataIndex: "name" }, { title: "Ghi chú", dataIndex: "description" }]} /></>,
+              children: (
+                <Space direction="vertical" size={12} style={{ width: "100%" }}>
+                  <Button type="primary" icon={<PlusOutlined />} onClick={() => openEnergyType()}>Thêm loại điện năng</Button>
+                  <Table rowKey="id" loading={loading} dataSource={energyTypes} pagination={false} columns={[
+                    { title: "Mã", dataIndex: "code", render: (value: string) => <b>{value}</b> },
+                    { title: "Tên loại", dataIndex: "name" },
+                    { title: "Ghi chú", dataIndex: "note" },
+                    { title: "Trạng thái", dataIndex: "isActive", render: (value: boolean) => <Tag color={value ? "green" : "default"}>{value ? "Đang dùng" : "Ngưng"}</Tag> },
+                    { title: "Thao tác", render: (_: unknown, record: EnergyType) => <Space><Button size="small" icon={<EditOutlined />} onClick={() => openEnergyType(record)} /><Popconfirm title="Xóa loại điện năng này?" onConfirm={() => deleteRecord("/api/electric/energy-types", record.id)}><Button size="small" danger icon={<DeleteOutlined />} /></Popconfirm></Space> },
+                  ]} />
+                </Space>
+              ),
             },
           ]}
         />
@@ -482,9 +525,12 @@ export function ElectricCatalogClient() {
       <Modal title={editingGroup ? "Sửa nhóm đồng hồ" : "Thêm nhóm đồng hồ"} open={groupModalOpen} onCancel={() => setGroupModalOpen(false)} onOk={() => formGroup.submit()}>
         <Form form={formGroup} layout="vertical" onFinish={saveGroup}><Form.Item name="code" label="Mã nhóm" rules={[{ required: true }]}><Input /></Form.Item><Form.Item name="name" label="Tên nhóm" rules={[{ required: true }]}><Input /></Form.Item><Form.Item name="sortOrder" label="Thứ tự"><InputNumber min={0} style={{ width: "100%" }} /></Form.Item><Form.Item name="description" label="Mô tả"><Input.TextArea rows={2} /></Form.Item><Form.Item name="isActive" label="Đang dùng" valuePropName="checked"><Switch /></Form.Item></Form>
       </Modal>
+      <Modal title={editingEnergyType ? "Sửa loại điện năng" : "Thêm loại điện năng"} open={energyTypeModalOpen} onCancel={() => setEnergyTypeModalOpen(false)} onOk={() => formEnergyType.submit()}>
+        <Form form={formEnergyType} layout="vertical" onFinish={saveEnergyType}><Form.Item name="code" label="Mã loại điện" rules={[{ required: true }]}><Input disabled={!!editingEnergyType} /></Form.Item><Form.Item name="name" label="Tên loại điện" rules={[{ required: true }]}><Input /></Form.Item><Form.Item name="note" label="Ghi chú"><Input.TextArea rows={2} /></Form.Item><Form.Item name="isActive" label="Đang dùng" valuePropName="checked"><Switch /></Form.Item></Form>
+      </Modal>
       <Modal title={editingMeter ? "Sửa đồng hồ điện" : "Thêm đồng hồ điện"} open={meterModalOpen} width={760} onCancel={() => setMeterModalOpen(false)} onOk={() => formMeter.submit()}>
         <Form form={formMeter} layout="vertical" onFinish={saveMeter}>
-          <Row gutter={12}><Col xs={24} md={8}><Form.Item name="code" label="Mã đồng hồ" rules={[{ required: true }]}><Input /></Form.Item></Col><Col xs={24} md={16}><Form.Item name="name" label="Tên đồng hồ" rules={[{ required: true }]}><Input /></Form.Item></Col><Col xs={24} md={12}><Form.Item name="transformerId" label="Trạm biến áp" rules={[{ required: true }]}><Select allowClear options={transformers.map((item) => ({ label: item.factory ? item.factory.name + " - " + item.name : item.name, value: item.id }))} /></Form.Item></Col><Col xs={24} md={12}><Form.Item name="groupId" label="Nhóm đồng hồ"><Select allowClear options={groups.map((item) => ({ label: item.name, value: item.id }))} /></Form.Item></Col><Col xs={24} md={8}><Form.Item name="tu" label="TU" rules={[{ required: true }]}><InputNumber min={1} style={{ width: "100%" }} /></Form.Item></Col><Col xs={24} md={8}><Form.Item name="ti" label="TI" rules={[{ required: true }]}><InputNumber min={1} style={{ width: "100%" }} /></Form.Item></Col><Col xs={24} md={8}><Form.Item name="meterNo" label="Số serial"><Input /></Form.Item></Col></Row>
+          <Row gutter={12}><Col xs={24} md={8}><Form.Item name="code" label="Mã đồng hồ" rules={[{ required: true }]}><Input /></Form.Item></Col><Col xs={24} md={16}><Form.Item name="name" label="Tên đồng hồ" rules={[{ required: true }]}><Input /></Form.Item></Col><Col xs={24} md={12}><Form.Item name="transformerId" label="Trạm biến áp" rules={[{ required: true }]}><Select allowClear options={transformers.map((item) => ({ label: item.factory ? item.factory.name + " - " + item.name : item.name, value: item.id }))} /></Form.Item></Col><Col xs={24} md={12}><Form.Item name="groupId" label="Nhóm đồng hồ"><Select allowClear options={groups.map((item) => ({ label: item.name, value: item.id }))} /></Form.Item></Col><Col xs={24} md={8}><Form.Item name="type" label="Loại đồng hồ" rules={[{ required: true }]}><Select options={[{ label: "Hạ thế (1 chỉ số)", value: 1 }, { label: "Trung thế (3 chỉ số)", value: 2 }]} /></Form.Item></Col><Col xs={24} md={8}><Form.Item name="tu" label="TU" rules={[{ required: true }]}><InputNumber min={1} style={{ width: "100%" }} /></Form.Item></Col><Col xs={24} md={8}><Form.Item name="ti" label="TI" rules={[{ required: true }]}><InputNumber min={1} style={{ width: "100%" }} /></Form.Item></Col><Col xs={24} md={8}><Form.Item name="meterNo" label="Số serial"><Input /></Form.Item></Col></Row>
           <Card size="small" title="Cấu hình thu thập tự động qua Gateway" style={{ marginBottom: 16 }}><Form.Item name="isAuto" label="Chế độ lấy số" valuePropName="checked"><Switch checkedChildren="AUTO" unCheckedChildren="MANUAL" /></Form.Item><Form.Item noStyle shouldUpdate={(prev, next) => prev.isAuto !== next.isAuto}>{({ getFieldValue }) => getFieldValue("isAuto") ? <Row gutter={12}><Col xs={24} md={10}><Form.Item name="gatewayIp" label="Gateway IP" rules={[{ required: true }]}><Input placeholder="192.168.1.253" /></Form.Item></Col><Col xs={24} md={7}><Form.Item name="gatewayPort" label="Gateway Port" rules={[{ required: true }]}><InputNumber min={1} style={{ width: "100%" }} /></Form.Item></Col><Col xs={24} md={7}><Form.Item name="modbusId" label="Slave ID" rules={[{ required: true }]}><InputNumber min={1} max={255} style={{ width: "100%" }} /></Form.Item></Col><Col xs={24} md={7}><Form.Item name="registerAddr" label="Register Active Energy"><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col></Row> : null}</Form.Item></Card>
           <Form.Item name="note" label="Mô tả / khu vực đo"><Input.TextArea rows={2} /></Form.Item><Form.Item name="isActive" label="Đang dùng" valuePropName="checked"><Switch /></Form.Item>
         </Form>
@@ -518,18 +564,28 @@ export function ElectricDailyInputClient() {
   const openRecord = async (meter: ElectricMeter) => {
     setCurrentMeter(meter); form.resetFields();
     const lastRecord = await fetchJson<PowerRecord | null>("/api/electric/last-record?meterId=" + meter.id + "&date=" + selectedDate.format("YYYY-MM-DD"));
-    form.setFieldsValue({ meterId: meter.id, prevTotal: meter.todayRecord?.prevTotal ?? lastRecord?.currTotal ?? 0, currTotal: meter.todayRecord?.currTotal ?? undefined, unitPrice: meter.todayRecord?.unitPrice ?? undefined, isReset: meter.todayRecord?.isReset ?? false, note: meter.todayRecord?.note ?? undefined });
+    if (meter.type === 2) {
+      form.setFieldsValue({
+        meterId: meter.id,
+        currNormal: meter.todayRecord?.currNormal ?? undefined,
+        currPeak: meter.todayRecord?.currPeak ?? undefined,
+        currOffPeak: meter.todayRecord?.currOffPeak ?? undefined,
+        note: meter.todayRecord?.note ?? undefined,
+      });
+    } else {
+      form.setFieldsValue({ meterId: meter.id, prevTotal: meter.todayRecord?.prevTotal ?? lastRecord?.currTotal ?? 0, currTotal: meter.todayRecord?.currTotal ?? undefined, unitPrice: meter.todayRecord?.unitPrice ?? undefined, isReset: meter.todayRecord?.isReset ?? false, note: meter.todayRecord?.note ?? undefined });
+    }
     setModalOpen(true);
   };
 
   const saveRecord = async () => {
     const values = await form.validateFields();
-    if (!values.isReset && Number(values.currTotal || 0) < Number(values.prevTotal || 0)) { message.error("Chỉ số sau nhỏ hơn chỉ số trước. Bật reset nếu đã thay đồng hồ."); return; }
+    if (currentMeter?.type !== 2 && !values.isReset && Number(values.currTotal || 0) < Number(values.prevTotal || 0)) { message.error("Chỉ số sau nhỏ hơn chỉ số trước. Bật reset nếu đã thay đồng hồ."); return; }
     await fetchJson("/api/electric/daily-input", postBody("POST", { ...values, recordDate: selectedDate.format("YYYY-MM-DD") }));
     message.success("Đã chốt chỉ số MANUAL"); setModalOpen(false); await loadMeters();
   };
 
-  return <><PageTitle title="Nhập chỉ số điện" subtitle="Chốt chỉ số thủ công MANUAL và theo dõi bản ghi AUTO đã chốt trong ngày." /><Row gutter={[12,12]} style={{ marginBottom: 16 }}><Col xs={24} md={8}><DatePicker value={selectedDate} onChange={(value) => value && setSelectedDate(value)} style={{ width: "100%" }} /></Col><Col xs={24} md={10}><Select placeholder="Chọn trạm biến áp" value={selectedTransformer} onChange={setSelectedTransformer} options={transformers.map((item) => ({ label: item.factory ? item.factory.name + " - " + item.name : item.name, value: item.id }))} style={{ width: "100%" }} /></Col><Col xs={24} md={6}><Button icon={<ReloadOutlined />} onClick={loadMeters} loading={loading} block>Tải dữ liệu</Button></Col></Row><Row gutter={[12,12]} style={{ marginBottom: 16 }}><Col xs={24} md={8}><Card><Statistic title="Tiến độ chốt" value={meters.filter((meter) => meter.todayRecord).length} suffix={"/ " + meters.length + " đồng hồ"} /></Card></Col></Row>{!selectedTransformer ? <Card><Empty description="Chọn trạm biến áp để nhập/chốt chỉ số" /></Card> : <Table rowKey="id" loading={loading} dataSource={meters} columns={[{ title: "Mã", dataIndex: "code", render: (value: string) => <b>{value}</b> }, { title: "Tên đồng hồ", dataIndex: "name" }, { title: "Chế độ", dataIndex: "isAuto", render: (value: boolean) => <Tag color={value ? "green" : "gold"}>{value ? "AUTO" : "MANUAL"}</Tag> }, { title: "Trạng thái", render: (_: unknown, record: ElectricMeter) => record.todayRecord ? <Tag color={record.todayRecord.dataSource === "AUTO" ? "green" : "orange"}>{record.todayRecord.dataSource}</Tag> : <Tag>Chưa chốt</Tag> }, { title: "Tiêu thụ", render: (_: unknown, record: ElectricMeter) => record.todayRecord ? fmtNumber.format(record.todayRecord.consTotal) + " kWh" : "---" }, { title: "Thao tác", render: (_: unknown, record: ElectricMeter) => <Button icon={<EditOutlined />} onClick={() => openRecord(record)}>Nhập MANUAL</Button> }]} />}<Modal title={"Chốt chỉ số: " + (currentMeter?.code || "")} open={modalOpen} onCancel={() => setModalOpen(false)} onOk={saveRecord} okText="Lưu MANUAL"><Form form={form} layout="vertical"><Alert type="warning" showIcon style={{ marginBottom: 12 }} message="Đồng hồ AUTO chỉ nên nhập tay khi gateway hoặc telemetry gặp sự cố." /><Form.Item name="meterId" hidden><Input /></Form.Item><Form.Item name="isReset" label="Reset / thay đồng hồ" valuePropName="checked"><Switch /></Form.Item><Row gutter={12}><Col span={12}><Form.Item name="prevTotal" label="Chỉ số trước"><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col><Col span={12}><Form.Item name="currTotal" label="Chỉ số sau" rules={[{ required: true }]}><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col><Col span={12}><Form.Item name="unitPrice" label="Đơn giá"><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col></Row><Form.Item name="note" label="Ghi chú"><Input.TextArea rows={2} /></Form.Item></Form></Modal></>;
+  return <><PageTitle title="Nhập chỉ số điện" subtitle="Chốt chỉ số thủ công MANUAL và theo dõi bản ghi AUTO đã chốt trong ngày." /><Row gutter={[12,12]} style={{ marginBottom: 16 }}><Col xs={24} md={8}><DatePicker value={selectedDate} onChange={(value) => value && setSelectedDate(value)} style={{ width: "100%" }} /></Col><Col xs={24} md={10}><Select placeholder="Chọn trạm biến áp" value={selectedTransformer} onChange={setSelectedTransformer} options={transformers.map((item) => ({ label: item.factory ? item.factory.name + " - " + item.name : item.name, value: item.id }))} style={{ width: "100%" }} /></Col><Col xs={24} md={6}><Button icon={<ReloadOutlined />} onClick={loadMeters} loading={loading} block>Tải dữ liệu</Button></Col></Row><Row gutter={[12,12]} style={{ marginBottom: 16 }}><Col xs={24} md={8}><Card><Statistic title="Tiến độ chốt" value={meters.filter((meter) => meter.todayRecord).length} suffix={"/ " + meters.length + " đồng hồ"} /></Card></Col></Row>{!selectedTransformer ? <Card><Empty description="Chọn trạm biến áp để nhập/chốt chỉ số" /></Card> : <Table rowKey="id" loading={loading} dataSource={meters} columns={[{ title: "Mã", dataIndex: "code", render: (value: string) => <b>{value}</b> }, { title: "Tên đồng hồ", dataIndex: "name" }, { title: "Loại", dataIndex: "type", render: (value: number) => value === 2 ? <Tag color="purple">Trung thế</Tag> : <Tag color="blue">Hạ thế</Tag> }, { title: "Chế độ", dataIndex: "isAuto", render: (value: boolean) => <Tag color={value ? "green" : "gold"}>{value ? "AUTO" : "MANUAL"}</Tag> }, { title: "Trạng thái", render: (_: unknown, record: ElectricMeter) => record.todayRecord ? <Tag color={record.todayRecord.dataSource === "AUTO" ? "green" : "orange"}>{record.todayRecord.dataSource}</Tag> : <Tag>Chưa chốt</Tag> }, { title: "Tiêu thụ", render: (_: unknown, record: ElectricMeter) => record.todayRecord ? fmtNumber.format(record.todayRecord.consTotal) + " kWh" : "---" }, { title: "Thao tác", render: (_: unknown, record: ElectricMeter) => <Button icon={<EditOutlined />} onClick={() => openRecord(record)}>Nhập MANUAL</Button> }]} />}<Modal title={"Chốt chỉ số: " + (currentMeter?.code || "")} open={modalOpen} onCancel={() => setModalOpen(false)} onOk={saveRecord} okText="Lưu MANUAL"><Form form={form} layout="vertical"><Alert type="warning" showIcon style={{ marginBottom: 12 }} message="Đồng hồ AUTO chỉ nên nhập tay khi gateway hoặc telemetry gặp sự cố." /><Form.Item name="meterId" hidden><Input /></Form.Item>{currentMeter?.type === 2 ? <><Alert type="info" showIcon style={{ marginBottom: 12 }} message="Đồng hồ trung thế: nhập 3 chỉ số hiển thị trên mặt đồng hồ điện tử, hệ thống tự tính tiêu thụ và tiền điện theo từng khung giờ." /><Row gutter={12}><Col span={8}><Form.Item name="currNormal" label="Chỉ số Bình thường" rules={[{ required: true }]}><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col><Col span={8}><Form.Item name="currPeak" label="Chỉ số Cao điểm" rules={[{ required: true }]}><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col><Col span={8}><Form.Item name="currOffPeak" label="Chỉ số Thấp điểm" rules={[{ required: true }]}><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col></Row></> : <><Form.Item name="isReset" label="Reset / thay đồng hồ" valuePropName="checked"><Switch /></Form.Item><Row gutter={12}><Col span={12}><Form.Item name="prevTotal" label="Chỉ số trước"><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col><Col span={12}><Form.Item name="currTotal" label="Chỉ số sau" rules={[{ required: true }]}><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col><Col span={12}><Form.Item name="unitPrice" label="Đơn giá"><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col></Row></>}<Form.Item name="note" label="Ghi chú"><Input.TextArea rows={2} /></Form.Item></Form></Modal></>;
 }
 
 export function ElectricLiveClient() {
@@ -543,16 +599,22 @@ export function ElectricPricesClient() {
   const [prices, setPrices] = useState<ElectricityPrice[]>([]); const [editing, setEditing] = useState<ElectricityPrice | null>(null); const [modalOpen, setModalOpen] = useState(false); const [loading, setLoading] = useState(false); const [form] = Form.useForm();
   const load = useCallback(async () => { setLoading(true); try { setPrices(await fetchJson<ElectricityPrice[]>("/api/electric/prices")); } catch (error) { message.error(error instanceof Error ? error.message : "Không tải được đơn giá điện"); } finally { setLoading(false); } }, []);
   useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
-  const openPrice = (record?: ElectricityPrice) => { setEditing(record || null); form.resetFields(); form.setFieldsValue(record ? { ...record, effectiveFrom: dayjs(record.effectiveFrom) } : { type: "NORMAL", effectiveFrom: dayjs() }); setModalOpen(true); };
-  const savePrice = async (values: { type: string; price: number; effectiveFrom?: Dayjs; note?: string }) => { await fetchJson("/api/electric/prices", postBody(editing ? "PUT" : "POST", { ...values, effectiveFrom: values.effectiveFrom?.toISOString() })); message.success("Đã lưu đơn giá điện"); setModalOpen(false); await load(); };
-  return <><PageTitle title="Đơn giá điện" subtitle="Quản lý đơn giá backend dùng khi chốt PowerRecord." /><Card extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => openPrice()}>Thêm/Cập nhật giá</Button>}><Table rowKey="id" loading={loading} dataSource={prices} columns={[{ title: "Loại giá", dataIndex: "type", render: (value: string) => <Tag color={value === "NORMAL" ? "blue" : "purple"}>{value}</Tag> }, { title: "Đơn giá", dataIndex: "price", align: "right", render: (value: number) => <b>{fmtMoney.format(value)} VNĐ/kWh</b> }, { title: "Hiệu lực", dataIndex: "effectiveFrom", render: (value: string) => dayjs(value).format("DD/MM/YYYY") }, { title: "Ghi chú", dataIndex: "note" }, { title: "Thao tác", render: (_: unknown, record: ElectricityPrice) => <Button icon={<EditOutlined />} onClick={() => openPrice(record)}>Cập nhật</Button> }]} /></Card><Modal title={editing ? "Cập nhật đơn giá" : "Thêm đơn giá"} open={modalOpen} onCancel={() => setModalOpen(false)} onOk={() => form.submit()}><Form form={form} layout="vertical" onFinish={savePrice}><Form.Item name="type" label="Loại giá" rules={[{ required: true }]}><Input disabled={!!editing} /></Form.Item><Form.Item name="price" label="Đơn giá VNĐ/kWh" rules={[{ required: true }]}><InputNumber min={0} style={{ width: "100%" }} /></Form.Item><Form.Item name="effectiveFrom" label="Ngày hiệu lực"><DatePicker style={{ width: "100%" }} /></Form.Item><Form.Item name="note" label="Ghi chú"><Input.TextArea rows={2} /></Form.Item></Form></Modal></>;
+  const priceTypeOptions = [
+    { label: "Bình thường (NORMAL)", value: "NORMAL" },
+    { label: "Cao điểm (PEAK)", value: "PEAK" },
+    { label: "Thấp điểm (OFF_PEAK)", value: "OFF_PEAK" },
+  ];
+  const priceTypeName: Record<string, string> = { NORMAL: "Bình thường", PEAK: "Cao điểm", OFF_PEAK: "Thấp điểm" };
+  const openPrice = (record?: ElectricityPrice) => { setEditing(record || null); form.resetFields(); form.setFieldsValue(record ? { ...record, effectiveFrom: dayjs(record.effectiveFrom) } : { type: "NORMAL", name: priceTypeName.NORMAL, effectiveFrom: dayjs() }); setModalOpen(true); };
+  const savePrice = async (values: { type: string; name: string; price: number; description?: string; effectiveFrom?: Dayjs; note?: string }) => { await fetchJson("/api/electric/prices", postBody(editing ? "PUT" : "POST", { ...values, effectiveFrom: values.effectiveFrom?.toISOString() })); message.success("Đã lưu đơn giá điện"); setModalOpen(false); await load(); };
+  return <><PageTitle title="Đơn giá điện" subtitle="Quản lý 3 khung giá Bình thường/Cao điểm/Thấp điểm dùng khi chốt PowerRecord." /><Card extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => openPrice()}>Thêm/Cập nhật giá</Button>}><Table rowKey="id" loading={loading} dataSource={prices} columns={[{ title: "Loại giá", dataIndex: "type", render: (value: string) => <Tag color={value === "NORMAL" ? "blue" : value === "PEAK" ? "red" : "green"}>{value}</Tag> }, { title: "Tên hiển thị", dataIndex: "name" }, { title: "Đơn giá", dataIndex: "price", align: "right", render: (value: number) => <b>{fmtMoney.format(value)} VNĐ/kWh</b> }, { title: "Khung giờ / Mô tả", dataIndex: "description" }, { title: "Hiệu lực", dataIndex: "effectiveFrom", render: (value: string) => dayjs(value).format("DD/MM/YYYY") }, { title: "Ghi chú", dataIndex: "note" }, { title: "Thao tác", render: (_: unknown, record: ElectricityPrice) => <Button icon={<EditOutlined />} onClick={() => openPrice(record)}>Cập nhật</Button> }]} /></Card><Modal title={editing ? "Cập nhật đơn giá" : "Thêm đơn giá"} open={modalOpen} onCancel={() => setModalOpen(false)} onOk={() => form.submit()}><Form form={form} layout="vertical" onFinish={savePrice}><Form.Item name="type" label="Loại giá" rules={[{ required: true }]}><Select disabled={!!editing} options={priceTypeOptions} onChange={(value) => form.setFieldsValue({ name: priceTypeName[value] })} /></Form.Item><Form.Item name="name" label="Tên hiển thị" rules={[{ required: true }]}><Input /></Form.Item><Form.Item name="price" label="Đơn giá VNĐ/kWh" rules={[{ required: true }]}><InputNumber min={0} style={{ width: "100%" }} /></Form.Item><Form.Item name="description" label="Khung giờ / Mô tả"><Input placeholder="Vd: 04:00-09:30, 11:30-17:00, 20:00-22:00" /></Form.Item><Form.Item name="effectiveFrom" label="Ngày hiệu lực"><DatePicker style={{ width: "100%" }} /></Form.Item><Form.Item name="note" label="Ghi chú"><Input.TextArea rows={2} /></Form.Item></Form></Modal></>;
 }
 
 export function ElectricReportsClient() {
   const [range, setRange] = useState<[Dayjs, Dayjs]>([dayjs().startOf("month"), dayjs()]); const [report, setReport] = useState<ReportData | null>(null); const [loading, setLoading] = useState(false);
   const load = useCallback(async () => { setLoading(true); try { const url = "/api/electric/reports?startDate=" + range[0].format("YYYY-MM-DD") + "&endDate=" + range[1].format("YYYY-MM-DD"); setReport(await fetchJson<ReportData>(url)); } catch (error) { message.error(error instanceof Error ? error.message : "Không tải được báo cáo điện năng"); } finally { setLoading(false); } }, [range]);
   useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
-  return <><PageTitle title="Báo cáo điện năng" subtitle="Tổng hợp PowerRecord theo nhà máy, trạm, đồng hồ và nhóm đồng hồ." /><Space wrap style={{ marginBottom: 16 }}><DatePicker.RangePicker value={range} onChange={(value) => value && setRange(value as [Dayjs, Dayjs])} /><Button icon={<ReloadOutlined />} onClick={load} loading={loading}>Làm mới</Button></Space><Row gutter={[12,12]} style={{ marginBottom: 16 }}><Col xs={24} md={8}><Card><Statistic title="Tổng tiêu thụ" value={report?.summary.totalConsumption || 0} precision={2} suffix="kWh" prefix={<ThunderboltOutlined />} /></Card></Col><Col xs={24} md={8}><Card><Statistic title="Chi phí điện" value={report?.summary.totalCost || 0} precision={0} suffix="VNĐ" prefix={<DollarOutlined />} /></Card></Col><Col xs={24} md={8}><Card><Statistic title="Trung bình/ngày" value={report?.summary.avgPerDay || 0} precision={2} suffix="kWh" prefix={<ApiOutlined />} /></Card></Col></Row><Card title="Tổng hợp theo nhà máy" style={{ marginBottom: 16 }}><Table rowKey={(record) => record.factoryId || record.factoryCode} loading={loading} dataSource={report?.byFactory || []} pagination={false} columns={[{ title: "Nhà máy", dataIndex: "factoryName" }, { title: "Tiêu thụ", dataIndex: "consTotal", align: "right", render: (value: number) => fmtNumber.format(value) + " kWh" }, { title: "Chi phí", dataIndex: "costTotal", align: "right", render: (value: number) => fmtMoney.format(value) + " VNĐ" }]} /></Card><Card title="Chi tiết theo đồng hồ"><Table rowKey="meterId" loading={loading} dataSource={report?.byMeter || []} columns={[{ title: "Mã ĐH", dataIndex: "meterCode", render: (value: string) => <Tag color="blue">{value}</Tag> }, { title: "Tên đồng hồ", dataIndex: "meterName" }, { title: "Nhà máy", dataIndex: "factoryName" }, { title: "Trạm", dataIndex: "substationName" }, { title: "Nhóm", dataIndex: "groupName" }, { title: "Tiêu thụ", dataIndex: "consTotal", align: "right", render: (value: number) => fmtNumber.format(value) + " kWh" }, { title: "Chi phí", dataIndex: "costTotal", align: "right", render: (value: number) => fmtMoney.format(value) + " VNĐ" }]} /></Card></>;
+  return <><PageTitle title="Báo cáo điện năng" subtitle="Tổng hợp PowerRecord theo nhà máy, trạm, đồng hồ và nhóm đồng hồ." /><Space wrap style={{ marginBottom: 16 }}><DatePicker.RangePicker value={range} onChange={(value) => value && setRange(value as [Dayjs, Dayjs])} /><Button icon={<ReloadOutlined />} onClick={load} loading={loading}>Làm mới</Button></Space><Row gutter={[12,12]} style={{ marginBottom: 16 }}><Col xs={24} md={6}><Card><Statistic title="Tổng tiêu thụ" value={report?.summary.totalConsumption || 0} precision={2} suffix="kWh" prefix={<ThunderboltOutlined />} /></Card></Col><Col xs={24} md={6}><Card><Statistic title="Chi phí điện" value={report?.summary.totalCost || 0} precision={0} suffix="VNĐ" prefix={<DollarOutlined />} /></Card></Col><Col xs={24} md={6}><Card><Statistic title="Trung bình/ngày" value={report?.summary.avgPerDay || 0} precision={2} suffix="kWh" prefix={<ApiOutlined />} /></Card></Col><Col xs={24} md={6}><Card><Statistic title="Cao điểm / Thấp điểm" value={report?.summary.totalPeak || 0} precision={2} suffix={"/ " + fmtNumber.format(report?.summary.totalOffPeak || 0) + " kWh"} /></Card></Col></Row><Card title="Tổng hợp theo nhà máy" style={{ marginBottom: 16 }}><Table rowKey={(record) => record.factoryId || record.factoryCode} loading={loading} dataSource={report?.byFactory || []} pagination={false} columns={[{ title: "Nhà máy", dataIndex: "factoryName" }, { title: "Tiêu thụ", dataIndex: "consTotal", align: "right", render: (value: number) => fmtNumber.format(value) + " kWh" }, { title: "Chi phí", dataIndex: "costTotal", align: "right", render: (value: number) => fmtMoney.format(value) + " VNĐ" }]} /></Card><Card title="Chi tiết theo đồng hồ"><Table rowKey="meterId" loading={loading} dataSource={report?.byMeter || []} columns={[{ title: "Mã ĐH", dataIndex: "meterCode", render: (value: string) => <Tag color="blue">{value}</Tag> }, { title: "Tên đồng hồ", dataIndex: "meterName" }, { title: "Nhà máy", dataIndex: "factoryName" }, { title: "Trạm", dataIndex: "substationName" }, { title: "Nhóm", dataIndex: "groupName" }, { title: "Tiêu thụ", dataIndex: "consTotal", align: "right", render: (value: number) => fmtNumber.format(value) + " kWh" }, { title: "Chi phí", dataIndex: "costTotal", align: "right", render: (value: number) => fmtMoney.format(value) + " VNĐ" }]} /></Card></>;
 }
 
 export function ElectricOverviewClient() {
