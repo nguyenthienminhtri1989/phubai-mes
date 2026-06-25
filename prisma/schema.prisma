@@ -11,3 +11,131 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+enum PowerDataSource {
+  MANUAL
+  AUTO
+}
+
+model Factory {
+  id           String             @id @default(cuid())
+  code         String             @unique
+  name         String
+  description  String?
+  location     String?
+  isActive     Boolean            @default(true)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  transformers PowerTransformer[]
+
+  @@index([isActive])
+}
+
+model PowerTransformer {
+  id          String       @id @default(cuid())
+  code        String       @unique
+  name        String
+  factoryId   String?
+  location    String?
+  capacityKva Float?
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  factory     Factory?     @relation(fields: [factoryId], references: [id], onDelete: SetNull)
+  meters      PowerMeter[]
+
+  @@index([factoryId])
+  @@index([isActive])
+}
+
+model PowerMeterGroup {
+  id          String       @id @default(cuid())
+  code        String       @unique
+  name        String
+  description String?
+  sortOrder   Int          @default(0)
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  meters      PowerMeter[]
+
+  @@index([isActive])
+}
+
+model PowerMeter {
+  id            String            @id @default(cuid())
+  code          String            @unique
+  name          String
+  meterNo       String?
+  transformerId String?
+  groupId       String?
+  isActive      Boolean           @default(true)
+  isAuto        Boolean           @default(false)
+  modbusId      Int?
+  gatewayIp     String?
+  gatewayPort   Int               @default(502)
+  registerAddr  Int               @default(0)
+  tu            Float             @default(1)
+  ti            Float             @default(1)
+  note          String?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  group         PowerMeterGroup?  @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  transformer   PowerTransformer? @relation(fields: [transformerId], references: [id], onDelete: SetNull)
+  records       PowerRecord[]
+  telemetry     PowerTelemetry[]
+
+  @@index([groupId])
+  @@index([transformerId])
+  @@index([isActive, isAuto])
+}
+
+model ElectricityPrice {
+  id            String   @id @default(cuid())
+  type          String   @unique @default("NORMAL")
+  price         Float    @default(0)
+  effectiveFrom DateTime @default(now())
+  note          String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model PowerTelemetry {
+  id          String     @id @default(cuid())
+  meterId     String
+  totalEnergy Float
+  voltage     Float?
+  current     Float?
+  power       Float?
+  powerFactor Float?
+  frequency   Float?
+  rawData     Json?
+  timestamp   DateTime   @default(now())
+  meter       PowerMeter @relation(fields: [meterId], references: [id], onDelete: Cascade)
+
+  @@index([meterId, timestamp])
+  @@index([timestamp])
+}
+
+model PowerRecord {
+  id         String          @id @default(cuid())
+  recordDate DateTime
+  meterId    String
+  dataSource PowerDataSource @default(MANUAL)
+  prevTotal  Float           @default(0)
+  currTotal  Float           @default(0)
+  consTotal  Float           @default(0)
+  unitPrice  Float           @default(0)
+  costTotal  Float           @default(0)
+  isReset    Boolean         @default(false)
+  note       String?
+  createdBy  String?
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+  meter      PowerMeter      @relation(fields: [meterId], references: [id], onDelete: Cascade)
+
+  @@unique([recordDate, meterId])
+  @@index([recordDate])
+  @@index([meterId])
+  @@index([dataSource])
+}

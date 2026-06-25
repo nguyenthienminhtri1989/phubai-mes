@@ -1,231 +1,167 @@
+import "dotenv/config";
 import cron from "node-cron";
-import ModbusRTU from "modbus-serial";
-import { PrismaClient } from "@prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
+import { PrismaClient } from "../src/generated/prisma/client.ts";
+import { readSelecTotalEnergy } from "../src/lib/energy-modbus.ts";
 
-const prisma = new PrismaClient();
+const connectionString = process.env.DATABASE_URL;
 
-// Hàm đảo Byte (từ CDAB về ABCD) giải mã Float chuẩn cho đồng hồ Selec
-function parseSelecFloat(buffer, offset = 0) {
-  const byteC = buffer[offset + 0];
-  const byteD = buffer[offset + 1];
-  const byteA = buffer[offset + 2];
-  const byteB = buffer[offset + 3];
-
-  const fixedBuffer = Buffer.alloc(4);
-  fixedBuffer[0] = byteA;
-  fixedBuffer[1] = byteB;
-  fixedBuffer[2] = byteC;
-  fixedBuffer[3] = byteD;
-
-  return fixedBuffer.readFloatBE(0);
+if (!connectionString) {
+  throw new Error("DATABASE_URL is required to run energy cron.");
 }
 
-// =========================================================================
-// JOB 1: THU THẬP KWH TỪNG GIỜ (Đa Gateway - Tối ưu hóa Kết nối)
-// =========================================================================
-cron.schedule("0 * * * *", async () => {
-  console.log(
-    `\n[${new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}] Bắt đầu tiến trình thu thập (Đa Gateway)...`,
-  );
-  try {
-    // 1. Lấy tất cả đồng hồ tự động CÓ cấu hình Gateway IP
-    const autoMeters = await prisma.powerMeter.findMany({
+const prisma = new PrismaClient({
+  adapter: new PrismaPg({ connectionString }),
+});
+
+function nowVN() {
+  return new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
+}
+
+function yesterdayAtVietnamMidnight() {
+  const todayStr = new Date().toLocaleDateString("en-CA", {
+    timeZone: "Asia/Ho_Chi_Minh",
+  });
+  const yesterday = new Date(`${todayStr}T12:00:00.000+07:00`);
+  yesterday.setDate(yesterday.getDate() - 1);
+  return new Date(`${yesterday.toISOString().slice(0, 10)}T12:00:00.000+07:00`);
+}
+
+async function collectTelemetry() {
+  console.log(`\n[${nowVN()}] Bat dau thu thap telemetry dien nang...`);
+
+  const autoMeters = await prisma.powerMeter.findMany({
+    where: {
+      isActive: true,
+      isAuto: true,
+      modbusId: { not: null },
+      gatewayIp: { not: null },
+    },
+    orderBy: [{ gatewayIp: "asc" }, { modbusId: "asc" }],
+  });
+
+  if (autoMeters.length === 0) {
+    console.log("Chua co dong ho AUTO nao duoc cau hinh du Gateway IP va Modbus ID.");
+    return;
+  }
+
+  const gateways = new Map();
+  for (const meter of autoMeters) {
+    const key = `${meter.gatewayIp}:${meter.gatewayPort || 502}`;
+    gateways.set(key, [...(gateways.get(key) || []), meter]);
+  }
+
+  for (const [gatewayKey, metersOnGateway] of gateways.entries()) {
+    console.log(`\n--- Gateway ${gatewayKey} ---`);
+
+    for (const meter of metersOnGateway) {
+      try {
+        const totalEnergy = await readSelecTotalEnergy(meter);
+        await prisma.powerTelemetry.create({
+          data: {
+            meterId: meter.id,
+            totalEnergy,
+          },
+        });
+        console.log(`  + ${meter.code} (ID ${meter.modbusId}): ${totalEnergy} kWh`);
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      } catch (error) {
+        console.error(`  - Loi doc ${meter.code} (ID ${meter.modbusId}): ${error.message}`);
+      }
+    }
+  }
+
+  console.log("Hoan tat chu ky thu thap telemetry.");
+}
+
+async function closeDailyRecords() {
+  console.log(`\n[${nowVN()}] Bat dau chot so dien nang luc 08:00...`);
+
+  const recordDate = yesterdayAtVietnamMidnight();
+  const autoMeters = await prisma.powerMeter.findMany({
+    where: { isActive: true, isAuto: true },
+    orderBy: { code: "asc" },
+  });
+  const priceRecord = await prisma.electricityPrice.findUnique({
+    where: { type: "NORMAL" },
+  });
+  const unitPrice = priceRecord?.price ?? 0;
+
+  for (const meter of autoMeters) {
+    const latestTelemetry = await prisma.powerTelemetry.findFirst({
+      where: { meterId: meter.id },
+      orderBy: { timestamp: "desc" },
+    });
+
+    if (!latestTelemetry) {
+      console.log(`[Bo qua] ${meter.code}: chua co telemetry.`);
+      continue;
+    }
+
+    const lastRecord = await prisma.powerRecord.findFirst({
       where: {
-        isActive: true,
-        isAuto: true,
-        modbusId: { not: null },
-        gatewayIp: { not: null },
+        meterId: meter.id,
+        recordDate: { lt: recordDate },
+      },
+      orderBy: { recordDate: "desc" },
+    });
+
+    const prevTotal = lastRecord?.currTotal ?? 0;
+    const currTotal = latestTelemetry.totalEnergy;
+    const isReset = currTotal < prevTotal;
+    const delta = isReset ? currTotal : Math.max(0, currTotal - prevTotal);
+    const consTotal = delta * meter.tu * meter.ti;
+    const costTotal = consTotal * unitPrice;
+
+    await prisma.powerRecord.upsert({
+      where: {
+        recordDate_meterId: {
+          recordDate,
+          meterId: meter.id,
+        },
+      },
+      update: {
+        dataSource: "AUTO",
+        prevTotal,
+        currTotal,
+        unitPrice,
+        isReset,
+        consTotal,
+        costTotal,
+      },
+      create: {
+        recordDate,
+        meterId: meter.id,
+        dataSource: "AUTO",
+        prevTotal,
+        currTotal,
+        unitPrice,
+        isReset,
+        consTotal,
+        costTotal,
       },
     });
 
-    if (autoMeters.length === 0) {
-      console.log("Chưa có đồng hồ nào được cấu hình đầy đủ thông tin IP.");
-      return;
-    }
-
-    // 2. Nhóm các đồng hồ theo chung 1 cục Gateway để tối ưu kết nối mạng
-    const gateways = {};
-    for (const meter of autoMeters) {
-      const key = `${meter.gatewayIp}:${meter.gatewayPort}`;
-      if (!gateways[key]) gateways[key] = [];
-      gateways[key].push(meter);
-    }
-
-    // 3. Duyệt qua từng Gateway (Từng Nhà máy)
-    for (const [gatewayKey, metersOnGateway] of Object.entries(gateways)) {
-      const [ip, portStr] = gatewayKey.split(":");
-      const port = parseInt(portStr, 10);
-
-      console.log(`\n--- Đang kết nối tới Gateway [${ip}:${port}] ---`);
-      const client = new ModbusRTU();
-
-      try {
-        // Chỉ mở TCP 1 lần duy nhất cho toàn bộ đồng hồ thuộc Gateway này
-        await client.connectTCP(ip.trim(), { port: port });
-        client.setTimeout(2500);
-
-        // Điểm danh đọc số từng đồng hồ
-        for (const meter of metersOnGateway) {
-          try {
-            client.setID(meter.modbusId);
-            const data = await client.readInputRegisters(0, 2);
-            const rawEnergy = parseSelecFloat(data.buffer, 0);
-            const totalEnergy = Number(rawEnergy.toFixed(2));
-
-            // Lưu xuống Database
-            await prisma.powerTelemetry.create({
-              data: {
-                meterId: meter.id,
-                totalEnergy: totalEnergy,
-              },
-            });
-            console.log(
-              `  + Đồng hồ ${meter.code} (ID: ${meter.modbusId}): ${totalEnergy} kWh`,
-            );
-
-            // Nghỉ 50ms giữa các lần hỏi để Gateway không bị nghẽn (Buffer Overflow)
-            await new Promise((resolve) => setTimeout(resolve, 50));
-          } catch (meterError) {
-            console.error(
-              `  - [Lỗi] Đồng hồ ${meter.code} (ID: ${meter.modbusId}): Đọc thất bại (${meterError.message})`,
-            );
-          }
-        }
-      } catch (gatewayError) {
-        console.error(
-          `[Lỗi Mạng] Không thể kết nối tới Gateway ${ip}:${port} - Bỏ qua cụm đồng hồ này! Lỗi: ${gatewayError.message}`,
-        );
-      } finally {
-        client.close(); // Xong việc thì đóng cửa kết nối để giải phóng RAM
-      }
-    }
-    console.log(`\nHoàn tất chu kỳ quét tất cả Gateway!`);
-  } catch (error) {
-    console.error("Lỗi cấu trúc Job Telemetry:", error);
+    console.log(`[Chot so] ${meter.code}: ${consTotal.toFixed(2)} kWh, ${costTotal.toLocaleString("vi-VN")} VND`);
   }
+
+  const sixMonthsAgo = new Date();
+  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+  const deletedData = await prisma.powerTelemetry.deleteMany({
+    where: { timestamp: { lt: sixMonthsAgo } },
+  });
+
+  console.log(`[Don dep] Da xoa ${deletedData.count} telemetry cu hon 6 thang.`);
+}
+
+cron.schedule("0 * * * *", collectTelemetry, {
+  scheduled: true,
+  timezone: "Asia/Ho_Chi_Minh",
 });
 
-// =========================================================================
-// JOB 2: CHỐT SỔ ĐÚNG 8H00 SÁNG HÀNG NGÀY (Chuẩn giờ Việt Nam)
-// =========================================================================
-cron.schedule(
-  "0 8 * * *",
-  async () => {
-    console.log(
-      `\n[${new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}] Bắt đầu tiến trình CHỐT SỔ 8H SÁNG...`,
-    );
+cron.schedule("0 8 * * *", closeDailyRecords, {
+  scheduled: true,
+  timezone: "Asia/Ho_Chi_Minh",
+});
 
-    // VÁ LỖI MÚI GIỜ: Lấy mốc 0h00 của ngày hôm qua theo chuẩn giờ Việt Nam
-    const todayStr = new Date().toLocaleDateString("en-CA", {
-      timeZone: "Asia/Ho_Chi_Minh",
-    }); // Định dạng YYYY-MM-DD
-    const yesterday = new Date(`${todayStr}T12:00:00.000+07:00`); // Lấy 12h trưa để tránh lỗi múi giờ
-    yesterday.setDate(yesterday.getDate() - 1);
-
-    try {
-      const autoMeters = await prisma.powerMeter.findMany({
-        where: { isActive: true, isAuto: true },
-      });
-
-      const priceRecord = await prisma.electricityPrice.findUnique({
-        where: { type: "NORMAL" },
-      });
-      const unitPrice = priceRecord ? priceRecord.price : 0;
-
-      for (const meter of autoMeters) {
-        const latestTelemetry = await prisma.powerTelemetry.findFirst({
-          where: { meterId: meter.id },
-          orderBy: { timestamp: "desc" },
-        });
-
-        if (!latestTelemetry || latestTelemetry.totalEnergy == null) {
-          console.log(
-            `[Bỏ qua] Đồng hồ ${meter.code} không có dữ liệu Telemetry.`,
-          );
-          continue;
-        }
-
-        const currTotal = latestTelemetry.totalEnergy;
-
-        const lastRecord = await prisma.powerRecord.findFirst({
-          where: { meterId: meter.id, recordDate: { lt: yesterday } },
-          orderBy: { recordDate: "desc" },
-        });
-
-        const prevTotal = lastRecord?.currTotal || 0;
-
-        let isReset = false;
-        if (currTotal < prevTotal) isReset = true;
-
-        const delta = isReset ? currTotal : Math.max(0, currTotal - prevTotal);
-        const multiplier = meter.tu * meter.ti;
-        const consTotal = delta * multiplier;
-        const costTotal = consTotal * unitPrice;
-
-        await prisma.powerRecord.upsert({
-          where: {
-            recordDate_meterId: { recordDate: yesterday, meterId: meter.id },
-          },
-          update: {
-            dataSource: "AUTO",
-            isReset,
-            prevTotal,
-            currTotal,
-            consTotal,
-            costTotal,
-          },
-          create: {
-            recordDate: yesterday,
-            meterId: meter.id,
-            dataSource: "AUTO",
-            isReset,
-            prevTotal,
-            currTotal,
-            consTotal,
-            costTotal,
-          },
-        });
-        console.log(
-          `[Chốt Sổ Thành Công] Đồng hồ ${meter.code}: Tiêu thụ ${consTotal.toFixed(2)} kWh | Thành tiền: ${costTotal.toLocaleString("vi-VN")} VNĐ`,
-        );
-      }
-
-      // ---------------------------------------------------------------------
-      // TỰ ĐỘNG LỌC MÁU (Xóa dữ liệu thô cũ hơn 6 tháng)
-      // ---------------------------------------------------------------------
-      console.log(
-        `[Dọn dẹp] Đang kiểm tra và xóa dữ liệu thô (Telemetry) cũ hơn 6 tháng...`,
-      );
-
-      const sixMonthsAgo = new Date();
-      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-
-      const deletedData = await prisma.powerTelemetry.deleteMany({
-        where: {
-          timestamp: { lt: sixMonthsAgo },
-        },
-      });
-
-      if (deletedData.count > 0) {
-        console.log(
-          `[Hoàn tất dọn dẹp] Đã xóa thành công ${deletedData.count} bản ghi cũ khỏi cơ sở dữ liệu để giải phóng dung lượng.`,
-        );
-      } else {
-        console.log(
-          `[Hoàn tất dọn dẹp] Hệ thống sạch sẽ, chưa có dữ liệu nào quá hạn 6 tháng cần xóa.`,
-        );
-      }
-    } catch (error) {
-      console.error("Lỗi Job Chốt Sổ & Dọn Dẹp 8h:", error);
-    }
-  },
-  {
-    // CẤU HÌNH NODE-CRON CHẠY THEO GIỜ VIỆT NAM
-    scheduled: true,
-    timezone: "Asia/Ho_Chi_Minh",
-  },
-);
-
-console.log(
-  "Tiến trình Energy Cronjob đã khởi động. Đang chờ đến lịch chạy...",
-);
+console.log("Energy cron da khoi dong. Thu thap moi gio, chot so luc 08:00 gio Viet Nam.");

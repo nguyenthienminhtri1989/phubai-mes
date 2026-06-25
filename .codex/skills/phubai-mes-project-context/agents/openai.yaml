@@ -1,0 +1,7 @@
+interface:
+  display_name: "PHUBAI-MES Context"
+  short_description: "Onboard agents into PHUBAI-MES"
+  default_prompt: "Use $phubai-mes-project-context to understand the PHUBAI-MES workspace before changing code."
+
+policy:
+  allow_implicit_invocation: true

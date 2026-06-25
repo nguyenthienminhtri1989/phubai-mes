@@ -1,0 +1,12 @@
+Warning: [antd: Space] `direction` is deprecated. Please use `orientation` instead.
+[browser] Warning: [antd: Space] `direction` is deprecated. Please use `orientation` instead. 
+    at Array.forEach (<anonymous>) (<anonymous>)
+Warning: [antd: Space] `direction` is deprecated. Please use `orientation` instead.
+Warning: [antd: Statistic] `valueStyle` is deprecated. Please use `styles.content` instead.
+Warning: [antd: Statistic] `valueStyle` is deprecated. Please use `styles.content` instead.
+[browser] Warning: [antd: Statistic] `valueStyle` is deprecated. Please use `styles.content` instead. 
+    at Array.forEach (<anonymous>) (<anonymous>)
+[browser] Warning: [antd: Space] `direction` is deprecated. Please use `orientation` instead. 
+    at Array.forEach (<anonymous>) (<anonymous>)
+[browser] Warning: [antd: Alert] `message` is deprecated. Please use `title` instead. 
+    at Array.forEach (<anonymous>) (<anonymous>)

@@ -1,0 +1,7 @@
+interface:
+  display_name: "PHUBAI-MES Electric"
+  short_description: "Build MES electric module safely"
+  default_prompt: "Use $phubai-mes-electric to continue PHUBAI-MES electric module development."
+
+policy:
+  allow_implicit_invocation: true
