@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 const path = require("node:path");
 
 const appRoot = __dirname;
@@ -9,6 +10,7 @@ module.exports = {
       cwd: appRoot,
       script: path.join(appRoot, "node_modules", "next", "dist", "bin", "next"),
       args: "start -p 3002",
+      windowsHide: true,
       env: {
         NODE_ENV: "production",
       },
@@ -16,9 +18,9 @@ module.exports = {
     {
       name: "phubai-mes-energy-cron",
       cwd: appRoot,
-      script: path.join(appRoot, "node_modules", "tsx", "dist", "cli.mjs"),
-      args: "scripts/energy-cron.js",
+      script: path.join(appRoot, "scripts", "energy-cron.js"),
       interpreter: "node",
+      windowsHide: true,
       env: {
         NODE_ENV: "production",
       },

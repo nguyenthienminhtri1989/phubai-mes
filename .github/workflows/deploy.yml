@@ -31,16 +31,34 @@ jobs:
       FEEDBACK_TO: ${{ secrets.FEEDBACK_TO }}
 
     steps:
-      - name: Checkout source
+      - name: 1. Stop MES PM2 apps before checkout
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path $env:PM2_HOME | Out-Null
+          $pm2 = Join-Path $env:GITHUB_WORKSPACE "node_modules\.bin\pm2.cmd"
+          if (Test-Path $pm2) {
+            & $pm2 stop phubai-mes-web 2>$null
+            & $pm2 stop phubai-mes-energy-cron 2>$null
+          } else {
+            Write-Host ">> PM2 local binary not found yet. Skipping PM2 stop."
+          }
+
+          $conn = Get-NetTCPConnection -LocalPort 3002 -ErrorAction SilentlyContinue
+          if ($conn) {
+            Stop-Process -Id $conn.OwningProcess -Force -ErrorAction SilentlyContinue
+          }
+          Start-Sleep -Seconds 2
+
+      - name: 2. Checkout source
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: 3. Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
-      - name: Validate required secrets
+      - name: 4. Validate required secrets
         shell: powershell
         run: |
           $required = @(
@@ -59,7 +77,7 @@ jobs:
             "AUTH_TRUST_HOST=true" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           }
 
-      - name: Create production env file
+      - name: 5. Create production env file
         shell: powershell
         run: |
           $envLines = @(
@@ -76,26 +94,49 @@ jobs:
           )
           Set-Content -LiteralPath .env -Value $envLines -Encoding utf8
 
-      - name: Install dependencies
+      - name: 6. Install dependencies
         run: npm ci --include=dev
 
-      - name: Generate Prisma client
+      - name: 7. Generate Prisma client
         run: npx prisma generate
 
-      - name: Deploy database migrations
+      - name: 8. Deploy database migrations
         run: npx prisma migrate deploy
 
-      - name: Build Next.js app
+      - name: 9. Build Next.js app
         run: npm run build
 
-      - name: Prepare PM2 home
+      - name: 10. Start only MES PM2 apps
         shell: powershell
         run: |
           New-Item -ItemType Directory -Force -Path $env:PM2_HOME | Out-Null
+          $pm2 = Join-Path (Get-Location) "node_modules\.bin\pm2.cmd"
+          if (!(Test-Path $pm2)) {
+            throw "PM2 local binary not found: $pm2"
+          }
 
-      - name: Start or restart PM2 apps
+          & $pm2 startOrReload ecosystem.config.cjs --only phubai-mes-web --update-env
+          & $pm2 startOrReload ecosystem.config.cjs --only phubai-mes-energy-cron --update-env
+          & $pm2 save
+          & $pm2 status
+
+          $maxWait = 30
+          for ($i = 0; $i -lt $maxWait; $i++) {
+            $up = Get-NetTCPConnection -LocalPort 3002 -State Listen -ErrorAction SilentlyContinue
+            if ($up) { Write-Host ">> PHUBAI-MES listening on 3002"; break }
+            Start-Sleep -Seconds 1
+          }
+
+      - name: 11. Fallback restart MES apps on failed deploy
+        if: failure()
         shell: powershell
         run: |
-          npx pm2 startOrRestart ecosystem.config.cjs --update-env
-          npx pm2 save
-          npx pm2 status
+          New-Item -ItemType Directory -Force -Path $env:PM2_HOME | Out-Null
+          $pm2 = Join-Path $env:GITHUB_WORKSPACE "node_modules\.bin\pm2.cmd"
+          if (Test-Path $pm2) {
+            & $pm2 startOrReload ecosystem.config.cjs --only phubai-mes-web --update-env
+            & $pm2 startOrReload ecosystem.config.cjs --only phubai-mes-energy-cron --update-env
+            & $pm2 save
+          } else {
+            Write-Host ">> PM2 local binary not found. Fallback restart skipped."
+          }

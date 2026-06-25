@@ -11,7 +11,9 @@ Trên máy chủ có 2 tiến trình PM2:
 - `phubai-mes-web`: chạy Next.js production ở port `3002`.
 - `phubai-mes-energy-cron`: chạy `scripts/energy-cron.js` để thu telemetry và chốt điện năng lúc 08:00.
 
-Workflow dùng `npx pm2` từ dependency của repo để không phụ thuộc PATH của PM2 global trong Windows service account. Workflow cũng đặt `PM2_HOME` vào thư mục checkout để tránh PM2 ghi vào profile `NetworkService`.
+Workflow dùng `npx pm2` từ dependency của repo để không phụ thuộc PATH của PM2 global trong Windows service account. Workflow cũng đặt `PM2_HOME` vào thư mục checkout để tránh PM2 ghi vào profile `NetworkService`. PM2 apps có `windowsHide: true` để không bật cửa sổ `node.exe` trên Windows.
+
+Workflow deploy MES chỉ stop/start `phubai-mes-web` và `phubai-mes-energy-cron`, chỉ kiểm tra/giải phóng port `3002`, không động tới ERP/HRM hoặc port khác.
 
 Workflow deploy chính:
 
