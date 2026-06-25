@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readSelecTotalEnergy } from "@/lib/energy-modbus";
+import { requireEditor } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 
 export async function GET(request: NextRequest) {
+  const guard = await requireEditor();
+  if (!guard.ok) return guard.response;
+
   const { searchParams } = new URL(request.url);
   const meterId = searchParams.get("meterId");
 

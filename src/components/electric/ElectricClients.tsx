@@ -36,7 +36,14 @@ import {
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
+import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+
+function useRole() {
+  const { data: session } = useSession();
+  const role = (session?.user as { role?: string } | undefined)?.role;
+  return { role, isAdmin: role === "ADMIN", canEditDaily: role === "ADMIN" || role === "EDITOR" };
+}
 
 const { Text, Title } = Typography;
 
@@ -218,6 +225,7 @@ function PageTitle({ title, subtitle }: { title: string; subtitle: string }) {
 }
 
 export function ElectricCatalogClient() {
+  const { isAdmin } = useRole();
   const [loading, setLoading] = useState(false);
   const [factories, setFactories] = useState<Factory[]>([]);
   const [transformers, setTransformers] = useState<Transformer[]>([]);
@@ -380,14 +388,14 @@ export function ElectricCatalogClient() {
     {
       title: "Thao tác",
       width: 110,
-      render: (_, record) => (
+      render: (_, record) => isAdmin ? (
         <Space>
           <Button size="small" icon={<EditOutlined />} onClick={() => openMeter(record)} />
           <Popconfirm title="Xóa hoặc ngưng dùng đồng hồ này?" onConfirm={() => deleteRecord("/api/electric/meters", record.id)}>
             <Button size="small" danger icon={<DeleteOutlined />} />
           </Popconfirm>
         </Space>
-      ),
+      ) : null,
     },
   ];
 
@@ -402,7 +410,7 @@ export function ElectricCatalogClient() {
               label: "Nhà máy",
               children: (
                 <Space direction="vertical" size={12} style={{ width: "100%" }}>
-                  <Button type="primary" icon={<PlusOutlined />} onClick={() => openFactory()}>Thêm nhà máy</Button>
+                  {isAdmin && <Button type="primary" icon={<PlusOutlined />} onClick={() => openFactory()}>Thêm nhà máy</Button>}
                   <Table
                     rowKey="id"
                     loading={loading}
@@ -416,14 +424,14 @@ export function ElectricCatalogClient() {
                       { title: "Trạng thái", dataIndex: "isActive", render: (value: boolean) => <Tag color={value ? "green" : "default"}>{value ? "Đang dùng" : "Ngưng"}</Tag> },
                       {
                         title: "Thao tác",
-                        render: (_: unknown, record: Factory) => (
+                        render: (_: unknown, record: Factory) => isAdmin ? (
                           <Space>
                             <Button size="small" icon={<EditOutlined />} onClick={() => openFactory(record)} />
                             <Popconfirm title="Xóa hoặc ngưng dùng nhà máy này?" onConfirm={() => deleteRecord("/api/electric/factories", record.id)}>
                               <Button size="small" danger icon={<DeleteOutlined />} />
                             </Popconfirm>
                           </Space>
-                        ),
+                        ) : null,
                       },
                     ]}
                   />
@@ -435,7 +443,7 @@ export function ElectricCatalogClient() {
               label: "Trạm biến áp",
               children: (
                 <Space direction="vertical" size={12} style={{ width: "100%" }}>
-                  <Button type="primary" icon={<PlusOutlined />} onClick={() => openTransformer()}>Thêm trạm biến áp</Button>
+                  {isAdmin && <Button type="primary" icon={<PlusOutlined />} onClick={() => openTransformer()}>Thêm trạm biến áp</Button>}
                   <Table
                     rowKey="id"
                     loading={loading}
@@ -448,14 +456,14 @@ export function ElectricCatalogClient() {
                       { title: "kVA", dataIndex: "capacityKva" },
                       {
                         title: "Thao tác",
-                        render: (_: unknown, record: Transformer) => (
+                        render: (_: unknown, record: Transformer) => isAdmin ? (
                           <Space>
                             <Button size="small" icon={<EditOutlined />} onClick={() => openTransformer(record)} />
                             <Popconfirm title="Xóa hoặc ngưng dùng trạm này?" onConfirm={() => deleteRecord("/api/electric/substations", record.id)}>
                               <Button size="small" danger icon={<DeleteOutlined />} />
                             </Popconfirm>
                           </Space>
-                        ),
+                        ) : null,
                       },
                     ]}
                   />
@@ -474,7 +482,7 @@ export function ElectricCatalogClient() {
                         <Select allowClear placeholder="Lọc theo trạm biến áp" style={{ width: 220 }} value={meterFilterTransformer} onChange={setMeterFilterTransformer} disabled={!meterFilterFactory} options={filteredTransformers.map((transformer) => ({ label: transformer.name, value: transformer.id }))} />
                       </Space>
                     </Col>
-                    <Col><Button type="primary" icon={<PlusOutlined />} onClick={() => openMeter()}>Thêm đồng hồ</Button></Col>
+                    <Col>{isAdmin && <Button type="primary" icon={<PlusOutlined />} onClick={() => openMeter()}>Thêm đồng hồ</Button>}</Col>
                   </Row>
                   <Table rowKey="id" loading={loading} dataSource={filteredMeters} columns={meterColumns} scroll={{ x: 980 }} />
                 </Space>
@@ -485,13 +493,13 @@ export function ElectricCatalogClient() {
               label: "Nhóm đồng hồ",
               children: (
                 <Space direction="vertical" size={12} style={{ width: "100%" }}>
-                  <Button type="primary" icon={<PlusOutlined />} onClick={() => openGroup()}>Thêm nhóm đồng hồ</Button>
+                  {isAdmin && <Button type="primary" icon={<PlusOutlined />} onClick={() => openGroup()}>Thêm nhóm đồng hồ</Button>}
                   <Table rowKey="id" loading={loading} dataSource={groups} columns={[
                     { title: "Mã nhóm", dataIndex: "code", render: (value: string) => <b>{value}</b> },
                     { title: "Tên nhóm", dataIndex: "name" },
                     { title: "Mô tả", dataIndex: "description" },
                     { title: "Thứ tự", dataIndex: "sortOrder", width: 100 },
-                    { title: "Thao tác", render: (_: unknown, record: MeterGroup) => <Space><Button size="small" icon={<EditOutlined />} onClick={() => openGroup(record)} /><Popconfirm title="Xóa hoặc ngưng dùng nhóm này?" onConfirm={() => deleteRecord("/api/electric/meter-groups", record.id)}><Button size="small" danger icon={<DeleteOutlined />} /></Popconfirm></Space> },
+                    { title: "Thao tác", render: (_: unknown, record: MeterGroup) => isAdmin ? <Space><Button size="small" icon={<EditOutlined />} onClick={() => openGroup(record)} /><Popconfirm title="Xóa hoặc ngưng dùng nhóm này?" onConfirm={() => deleteRecord("/api/electric/meter-groups", record.id)}><Button size="small" danger icon={<DeleteOutlined />} /></Popconfirm></Space> : null },
                   ]} />
                 </Space>
               ),
@@ -501,13 +509,13 @@ export function ElectricCatalogClient() {
               label: "Loại điện năng",
               children: (
                 <Space direction="vertical" size={12} style={{ width: "100%" }}>
-                  <Button type="primary" icon={<PlusOutlined />} onClick={() => openEnergyType()}>Thêm loại điện năng</Button>
+                  {isAdmin && <Button type="primary" icon={<PlusOutlined />} onClick={() => openEnergyType()}>Thêm loại điện năng</Button>}
                   <Table rowKey="id" loading={loading} dataSource={energyTypes} pagination={false} columns={[
                     { title: "Mã", dataIndex: "code", render: (value: string) => <b>{value}</b> },
                     { title: "Tên loại", dataIndex: "name" },
                     { title: "Ghi chú", dataIndex: "note" },
                     { title: "Trạng thái", dataIndex: "isActive", render: (value: boolean) => <Tag color={value ? "green" : "default"}>{value ? "Đang dùng" : "Ngưng"}</Tag> },
-                    { title: "Thao tác", render: (_: unknown, record: EnergyType) => <Space><Button size="small" icon={<EditOutlined />} onClick={() => openEnergyType(record)} /><Popconfirm title="Xóa loại điện năng này?" onConfirm={() => deleteRecord("/api/electric/energy-types", record.id)}><Button size="small" danger icon={<DeleteOutlined />} /></Popconfirm></Space> },
+                    { title: "Thao tác", render: (_: unknown, record: EnergyType) => isAdmin ? <Space><Button size="small" icon={<EditOutlined />} onClick={() => openEnergyType(record)} /><Popconfirm title="Xóa loại điện năng này?" onConfirm={() => deleteRecord("/api/electric/energy-types", record.id)}><Button size="small" danger icon={<DeleteOutlined />} /></Popconfirm></Space> : null },
                   ]} />
                 </Space>
               ),
@@ -540,6 +548,7 @@ export function ElectricCatalogClient() {
 }
 
 export function ElectricDailyInputClient() {
+  const { canEditDaily } = useRole();
   const [selectedDate, setSelectedDate] = useState<Dayjs>(dayjs().subtract(1, "day"));
   const [transformers, setTransformers] = useState<Transformer[]>([]);
   const [meters, setMeters] = useState<ElectricMeter[]>([]);
@@ -585,17 +594,19 @@ export function ElectricDailyInputClient() {
     message.success("Đã chốt chỉ số MANUAL"); setModalOpen(false); await loadMeters();
   };
 
-  return <><PageTitle title="Nhập chỉ số điện" subtitle="Chốt chỉ số thủ công MANUAL và theo dõi bản ghi AUTO đã chốt trong ngày." /><Row gutter={[12,12]} style={{ marginBottom: 16 }}><Col xs={24} md={8}><DatePicker value={selectedDate} onChange={(value) => value && setSelectedDate(value)} style={{ width: "100%" }} /></Col><Col xs={24} md={10}><Select placeholder="Chọn trạm biến áp" value={selectedTransformer} onChange={setSelectedTransformer} options={transformers.map((item) => ({ label: item.factory ? item.factory.name + " - " + item.name : item.name, value: item.id }))} style={{ width: "100%" }} /></Col><Col xs={24} md={6}><Button icon={<ReloadOutlined />} onClick={loadMeters} loading={loading} block>Tải dữ liệu</Button></Col></Row><Row gutter={[12,12]} style={{ marginBottom: 16 }}><Col xs={24} md={8}><Card><Statistic title="Tiến độ chốt" value={meters.filter((meter) => meter.todayRecord).length} suffix={"/ " + meters.length + " đồng hồ"} /></Card></Col></Row>{!selectedTransformer ? <Card><Empty description="Chọn trạm biến áp để nhập/chốt chỉ số" /></Card> : <Table rowKey="id" loading={loading} dataSource={meters} columns={[{ title: "Mã", dataIndex: "code", render: (value: string) => <b>{value}</b> }, { title: "Tên đồng hồ", dataIndex: "name" }, { title: "Loại", dataIndex: "type", render: (value: number) => value === 2 ? <Tag color="purple">Trung thế</Tag> : <Tag color="blue">Hạ thế</Tag> }, { title: "Chế độ", dataIndex: "isAuto", render: (value: boolean) => <Tag color={value ? "green" : "gold"}>{value ? "AUTO" : "MANUAL"}</Tag> }, { title: "Trạng thái", render: (_: unknown, record: ElectricMeter) => record.todayRecord ? <Tag color={record.todayRecord.dataSource === "AUTO" ? "green" : "orange"}>{record.todayRecord.dataSource}</Tag> : <Tag>Chưa chốt</Tag> }, { title: "Tiêu thụ", render: (_: unknown, record: ElectricMeter) => record.todayRecord ? fmtNumber.format(record.todayRecord.consTotal) + " kWh" : "---" }, { title: "Thao tác", render: (_: unknown, record: ElectricMeter) => <Button icon={<EditOutlined />} onClick={() => openRecord(record)}>Nhập MANUAL</Button> }]} />}<Modal title={"Chốt chỉ số: " + (currentMeter?.code || "")} open={modalOpen} onCancel={() => setModalOpen(false)} onOk={saveRecord} okText="Lưu MANUAL"><Form form={form} layout="vertical"><Alert type="warning" showIcon style={{ marginBottom: 12 }} message="Đồng hồ AUTO chỉ nên nhập tay khi gateway hoặc telemetry gặp sự cố." /><Form.Item name="meterId" hidden><Input /></Form.Item>{currentMeter?.type === 2 ? <><Alert type="info" showIcon style={{ marginBottom: 12 }} message="Đồng hồ trung thế: nhập 3 chỉ số hiển thị trên mặt đồng hồ điện tử, hệ thống tự tính tiêu thụ và tiền điện theo từng khung giờ." /><Row gutter={12}><Col span={8}><Form.Item name="currNormal" label="Chỉ số Bình thường" rules={[{ required: true }]}><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col><Col span={8}><Form.Item name="currPeak" label="Chỉ số Cao điểm" rules={[{ required: true }]}><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col><Col span={8}><Form.Item name="currOffPeak" label="Chỉ số Thấp điểm" rules={[{ required: true }]}><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col></Row></> : <><Form.Item name="isReset" label="Reset / thay đồng hồ" valuePropName="checked"><Switch /></Form.Item><Row gutter={12}><Col span={12}><Form.Item name="prevTotal" label="Chỉ số trước"><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col><Col span={12}><Form.Item name="currTotal" label="Chỉ số sau" rules={[{ required: true }]}><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col><Col span={12}><Form.Item name="unitPrice" label="Đơn giá"><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col></Row></>}<Form.Item name="note" label="Ghi chú"><Input.TextArea rows={2} /></Form.Item></Form></Modal></>;
+  return <><PageTitle title="Nhập chỉ số điện" subtitle="Chốt chỉ số thủ công MANUAL và theo dõi bản ghi AUTO đã chốt trong ngày." /><Row gutter={[12,12]} style={{ marginBottom: 16 }}><Col xs={24} md={8}><DatePicker value={selectedDate} onChange={(value) => value && setSelectedDate(value)} style={{ width: "100%" }} /></Col><Col xs={24} md={10}><Select placeholder="Chọn trạm biến áp" value={selectedTransformer} onChange={setSelectedTransformer} options={transformers.map((item) => ({ label: item.factory ? item.factory.name + " - " + item.name : item.name, value: item.id }))} style={{ width: "100%" }} /></Col><Col xs={24} md={6}><Button icon={<ReloadOutlined />} onClick={loadMeters} loading={loading} block>Tải dữ liệu</Button></Col></Row><Row gutter={[12,12]} style={{ marginBottom: 16 }}><Col xs={24} md={8}><Card><Statistic title="Tiến độ chốt" value={meters.filter((meter) => meter.todayRecord).length} suffix={"/ " + meters.length + " đồng hồ"} /></Card></Col></Row>{!selectedTransformer ? <Card><Empty description="Chọn trạm biến áp để nhập/chốt chỉ số" /></Card> : <Table rowKey="id" loading={loading} dataSource={meters} columns={[{ title: "Mã", dataIndex: "code", render: (value: string) => <b>{value}</b> }, { title: "Tên đồng hồ", dataIndex: "name" }, { title: "Loại", dataIndex: "type", render: (value: number) => value === 2 ? <Tag color="purple">Trung thế</Tag> : <Tag color="blue">Hạ thế</Tag> }, { title: "Chế độ", dataIndex: "isAuto", render: (value: boolean) => <Tag color={value ? "green" : "gold"}>{value ? "AUTO" : "MANUAL"}</Tag> }, { title: "Trạng thái", render: (_: unknown, record: ElectricMeter) => record.todayRecord ? <Tag color={record.todayRecord.dataSource === "AUTO" ? "green" : "orange"}>{record.todayRecord.dataSource}</Tag> : <Tag>Chưa chốt</Tag> }, { title: "Tiêu thụ", render: (_: unknown, record: ElectricMeter) => record.todayRecord ? fmtNumber.format(record.todayRecord.consTotal) + " kWh" : "---" }, { title: "Thao tác", render: (_: unknown, record: ElectricMeter) => canEditDaily ? <Button icon={<EditOutlined />} onClick={() => openRecord(record)}>Nhập MANUAL</Button> : null }]} />}<Modal title={"Chốt chỉ số: " + (currentMeter?.code || "")} open={modalOpen} onCancel={() => setModalOpen(false)} onOk={saveRecord} okText="Lưu MANUAL"><Form form={form} layout="vertical"><Alert type="warning" showIcon style={{ marginBottom: 12 }} message="Đồng hồ AUTO chỉ nên nhập tay khi gateway hoặc telemetry gặp sự cố." /><Form.Item name="meterId" hidden><Input /></Form.Item>{currentMeter?.type === 2 ? <><Alert type="info" showIcon style={{ marginBottom: 12 }} message="Đồng hồ trung thế: nhập 3 chỉ số hiển thị trên mặt đồng hồ điện tử, hệ thống tự tính tiêu thụ và tiền điện theo từng khung giờ." /><Row gutter={12}><Col span={8}><Form.Item name="currNormal" label="Chỉ số Bình thường" rules={[{ required: true }]}><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col><Col span={8}><Form.Item name="currPeak" label="Chỉ số Cao điểm" rules={[{ required: true }]}><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col><Col span={8}><Form.Item name="currOffPeak" label="Chỉ số Thấp điểm" rules={[{ required: true }]}><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col></Row></> : <><Form.Item name="isReset" label="Reset / thay đồng hồ" valuePropName="checked"><Switch /></Form.Item><Row gutter={12}><Col span={12}><Form.Item name="prevTotal" label="Chỉ số trước"><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col><Col span={12}><Form.Item name="currTotal" label="Chỉ số sau" rules={[{ required: true }]}><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col><Col span={12}><Form.Item name="unitPrice" label="Đơn giá"><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col></Row></>}<Form.Item name="note" label="Ghi chú"><Input.TextArea rows={2} /></Form.Item></Form></Modal></>;
 }
 
 export function ElectricLiveClient() {
+  const { canEditDaily } = useRole();
   const [meters, setMeters] = useState<ElectricMeter[]>([]); const [selectedMeter, setSelectedMeter] = useState<string>(); const [liveData, setLiveData] = useState<LiveData | null>(null); const [loading, setLoading] = useState(false);
   useEffect(() => { fetchJson<ElectricMeter[]>("/api/electric/meters").then((data) => setMeters(data.filter((meter) => meter.isAuto))).catch(() => message.error("Không tải được đồng hồ AUTO")); }, []);
   const readLive = async () => { if (!selectedMeter) { message.warning("Chọn đồng hồ AUTO cần đọc"); return; } setLoading(true); try { const data = await fetchJson<LiveData>("/api/electric/live?meterId=" + selectedMeter); setLiveData(data); message.success("Đã đọc realtime và lưu telemetry"); } catch (error) { message.error(error instanceof Error ? error.message : "Không đọc được realtime"); } finally { setLoading(false); } };
-  return <><PageTitle title="Realtime điện năng" subtitle="Đọc trực tiếp đồng hồ AUTO qua Modbus Gateway và lưu PowerTelemetry." /><Card><Space wrap><Select placeholder="Chọn đồng hồ AUTO" style={{ minWidth: 320 }} value={selectedMeter} onChange={setSelectedMeter} options={meters.map((meter) => ({ label: meter.code + " - " + meter.name, value: meter.id }))} /><Button type="primary" icon={<ThunderboltOutlined />} loading={loading} onClick={readLive}>Đọc realtime</Button></Space>{liveData ? <Card size="small" style={{ marginTop: 16 }}><Statistic title="Tổng kWh" value={liveData.totalEnergy} precision={2} suffix="kWh" /><Text>Thời điểm: {dayjs(liveData.timestamp).format("DD/MM/YYYY HH:mm:ss")}</Text><br /><Text type="secondary">Dữ liệu này chỉ dùng realtime/chart, không dùng trực tiếp để tính tiền.</Text></Card> : null}</Card></>;
+  return <><PageTitle title="Realtime điện năng" subtitle="Đọc trực tiếp đồng hồ AUTO qua Modbus Gateway và lưu PowerTelemetry." /><Card><Space wrap><Select placeholder="Chọn đồng hồ AUTO" style={{ minWidth: 320 }} value={selectedMeter} onChange={setSelectedMeter} options={meters.map((meter) => ({ label: meter.code + " - " + meter.name, value: meter.id }))} />{canEditDaily && <Button type="primary" icon={<ThunderboltOutlined />} loading={loading} onClick={readLive}>Đọc realtime</Button>}</Space>{liveData ? <Card size="small" style={{ marginTop: 16 }}><Statistic title="Tổng kWh" value={liveData.totalEnergy} precision={2} suffix="kWh" /><Text>Thời điểm: {dayjs(liveData.timestamp).format("DD/MM/YYYY HH:mm:ss")}</Text><br /><Text type="secondary">Dữ liệu này chỉ dùng realtime/chart, không dùng trực tiếp để tính tiền.</Text></Card> : null}</Card></>;
 }
 
 export function ElectricPricesClient() {
+  const { isAdmin } = useRole();
   const [prices, setPrices] = useState<ElectricityPrice[]>([]); const [editing, setEditing] = useState<ElectricityPrice | null>(null); const [modalOpen, setModalOpen] = useState(false); const [loading, setLoading] = useState(false); const [form] = Form.useForm();
   const load = useCallback(async () => { setLoading(true); try { setPrices(await fetchJson<ElectricityPrice[]>("/api/electric/prices")); } catch (error) { message.error(error instanceof Error ? error.message : "Không tải được đơn giá điện"); } finally { setLoading(false); } }, []);
   useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
@@ -607,7 +618,7 @@ export function ElectricPricesClient() {
   const priceTypeName: Record<string, string> = { NORMAL: "Bình thường", PEAK: "Cao điểm", OFF_PEAK: "Thấp điểm" };
   const openPrice = (record?: ElectricityPrice) => { setEditing(record || null); form.resetFields(); form.setFieldsValue(record ? { ...record, effectiveFrom: dayjs(record.effectiveFrom) } : { type: "NORMAL", name: priceTypeName.NORMAL, effectiveFrom: dayjs() }); setModalOpen(true); };
   const savePrice = async (values: { type: string; name: string; price: number; description?: string; effectiveFrom?: Dayjs; note?: string }) => { await fetchJson("/api/electric/prices", postBody(editing ? "PUT" : "POST", { ...values, effectiveFrom: values.effectiveFrom?.toISOString() })); message.success("Đã lưu đơn giá điện"); setModalOpen(false); await load(); };
-  return <><PageTitle title="Đơn giá điện" subtitle="Quản lý 3 khung giá Bình thường/Cao điểm/Thấp điểm dùng khi chốt PowerRecord." /><Card extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => openPrice()}>Thêm/Cập nhật giá</Button>}><Table rowKey="id" loading={loading} dataSource={prices} columns={[{ title: "Loại giá", dataIndex: "type", render: (value: string) => <Tag color={value === "NORMAL" ? "blue" : value === "PEAK" ? "red" : "green"}>{value}</Tag> }, { title: "Tên hiển thị", dataIndex: "name" }, { title: "Đơn giá", dataIndex: "price", align: "right", render: (value: number) => <b>{fmtMoney.format(value)} VNĐ/kWh</b> }, { title: "Khung giờ / Mô tả", dataIndex: "description" }, { title: "Hiệu lực", dataIndex: "effectiveFrom", render: (value: string) => dayjs(value).format("DD/MM/YYYY") }, { title: "Ghi chú", dataIndex: "note" }, { title: "Thao tác", render: (_: unknown, record: ElectricityPrice) => <Button icon={<EditOutlined />} onClick={() => openPrice(record)}>Cập nhật</Button> }]} /></Card><Modal title={editing ? "Cập nhật đơn giá" : "Thêm đơn giá"} open={modalOpen} onCancel={() => setModalOpen(false)} onOk={() => form.submit()}><Form form={form} layout="vertical" onFinish={savePrice}><Form.Item name="type" label="Loại giá" rules={[{ required: true }]}><Select disabled={!!editing} options={priceTypeOptions} onChange={(value) => form.setFieldsValue({ name: priceTypeName[value] })} /></Form.Item><Form.Item name="name" label="Tên hiển thị" rules={[{ required: true }]}><Input /></Form.Item><Form.Item name="price" label="Đơn giá VNĐ/kWh" rules={[{ required: true }]}><InputNumber min={0} style={{ width: "100%" }} /></Form.Item><Form.Item name="description" label="Khung giờ / Mô tả"><Input placeholder="Vd: 04:00-09:30, 11:30-17:00, 20:00-22:00" /></Form.Item><Form.Item name="effectiveFrom" label="Ngày hiệu lực"><DatePicker style={{ width: "100%" }} /></Form.Item><Form.Item name="note" label="Ghi chú"><Input.TextArea rows={2} /></Form.Item></Form></Modal></>;
+  return <><PageTitle title="Đơn giá điện" subtitle="Quản lý 3 khung giá Bình thường/Cao điểm/Thấp điểm dùng khi chốt PowerRecord." /><Card extra={isAdmin && <Button type="primary" icon={<PlusOutlined />} onClick={() => openPrice()}>Thêm/Cập nhật giá</Button>}><Table rowKey="id" loading={loading} dataSource={prices} columns={[{ title: "Loại giá", dataIndex: "type", render: (value: string) => <Tag color={value === "NORMAL" ? "blue" : value === "PEAK" ? "red" : "green"}>{value}</Tag> }, { title: "Tên hiển thị", dataIndex: "name" }, { title: "Đơn giá", dataIndex: "price", align: "right", render: (value: number) => <b>{fmtMoney.format(value)} VNĐ/kWh</b> }, { title: "Khung giờ / Mô tả", dataIndex: "description" }, { title: "Hiệu lực", dataIndex: "effectiveFrom", render: (value: string) => dayjs(value).format("DD/MM/YYYY") }, { title: "Ghi chú", dataIndex: "note" }, { title: "Thao tác", render: (_: unknown, record: ElectricityPrice) => isAdmin ? <Button icon={<EditOutlined />} onClick={() => openPrice(record)}>Cập nhật</Button> : null }]} /></Card><Modal title={editing ? "Cập nhật đơn giá" : "Thêm đơn giá"} open={modalOpen} onCancel={() => setModalOpen(false)} onOk={() => form.submit()}><Form form={form} layout="vertical" onFinish={savePrice}><Form.Item name="type" label="Loại giá" rules={[{ required: true }]}><Select disabled={!!editing} options={priceTypeOptions} onChange={(value) => form.setFieldsValue({ name: priceTypeName[value] })} /></Form.Item><Form.Item name="name" label="Tên hiển thị" rules={[{ required: true }]}><Input /></Form.Item><Form.Item name="price" label="Đơn giá VNĐ/kWh" rules={[{ required: true }]}><InputNumber min={0} style={{ width: "100%" }} /></Form.Item><Form.Item name="description" label="Khung giờ / Mô tả"><Input placeholder="Vd: 04:00-09:30, 11:30-17:00, 20:00-22:00" /></Form.Item><Form.Item name="effectiveFrom" label="Ngày hiệu lực"><DatePicker style={{ width: "100%" }} /></Form.Item><Form.Item name="note" label="Ghi chú"><Input.TextArea rows={2} /></Form.Item></Form></Modal></>;
 }
 
 export function ElectricReportsClient() {

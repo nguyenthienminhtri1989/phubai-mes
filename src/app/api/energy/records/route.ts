@@ -1,6 +1,7 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import { PowerDataSource } from "@/generated/prisma/enums";
 import { buildPowerRecordValues, toRecordDate } from "@/lib/energy-record";
+import { requireEditor } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 
 export async function GET(request: NextRequest) {
@@ -35,6 +36,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const guard = await requireEditor();
+  if (!guard.ok) return guard.response;
+
   const body = await request.json();
   const recordDate = toRecordDate(body.recordDate);
   const meterId = String(body.meterId || "");

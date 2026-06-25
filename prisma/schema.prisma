@@ -17,6 +17,25 @@ enum PowerDataSource {
   AUTO
 }
 
+enum UserRole {
+  ADMIN // Toàn quyền: xem/sửa/xóa mọi thứ, quản lý user
+  EDITOR // Xem mọi thứ + nhập/sửa chỉ số hàng ngày, không sửa danh mục/giá điện, không xóa
+  VIEWER // Chỉ xem
+}
+
+model User {
+  id        String   @id @default(cuid())
+  username  String   @unique
+  password  String // bcrypt hash
+  fullName  String
+  role      UserRole @default(VIEWER)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+}
+
 model Factory {
   id           String             @id @default(cuid())
   code         String             @unique
