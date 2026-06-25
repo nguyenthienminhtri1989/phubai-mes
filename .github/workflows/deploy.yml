@@ -90,6 +90,6 @@ jobs:
       - name: Start or restart PM2 apps
         shell: powershell
         run: |
-          pm2 startOrRestart ecosystem.config.cjs --update-env
-          pm2 save
-          pm2 status
+          npx pm2 startOrRestart ecosystem.config.cjs --update-env
+          npx pm2 save
+          npx pm2 status

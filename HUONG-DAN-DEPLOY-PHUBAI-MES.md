@@ -11,6 +11,8 @@ Trên máy chủ có 2 tiến trình PM2:
 - `phubai-mes-web`: chạy Next.js production ở port `3002`.
 - `phubai-mes-energy-cron`: chạy `scripts/energy-cron.js` để thu telemetry và chốt điện năng lúc 08:00.
 
+Workflow dùng `npx pm2` từ dependency của repo để không phụ thuộc PATH của PM2 global trong Windows service account.
+
 Workflow deploy chính:
 
 Dev push GitHub -> GitHub Actions self-hosted runner trên server -> Prisma migrate deploy -> Next build -> PM2 restart.
@@ -140,8 +142,8 @@ Các bước workflow:
 5. Chạy `npx prisma generate`.
 6. Chạy `npx prisma migrate deploy`.
 7. Chạy `npm run build`.
-8. Chạy `pm2 startOrRestart ecosystem.config.cjs --update-env`.
-9. Chạy `pm2 save`.
+8. Chạy `npx pm2 startOrRestart ecosystem.config.cjs --update-env`.
+9. Chạy `npx pm2 save`.
 
 ## 7. PM2 ecosystem
 
@@ -156,11 +158,11 @@ File này dùng `__dirname` làm `cwd`, nên có thể chạy trong thư mục c
 Nếu cần kiểm tra thủ công trên server:
 
 ```powershell
-pm2 startOrRestart ecosystem.config.cjs --update-env
-pm2 status
-pm2 logs phubai-mes-web
-pm2 logs phubai-mes-energy-cron
-pm2 save
+npx pm2 startOrRestart ecosystem.config.cjs --update-env
+npx pm2 status
+npx pm2 logs phubai-mes-web
+npx pm2 logs phubai-mes-energy-cron
+npx pm2 save
 ```
 
 ## 8. Cloudflare Tunnel
@@ -215,7 +217,7 @@ Trên GitHub:
 Trên server nếu cần:
 
 ```powershell
-pm2 status
+npx pm2 status
 curl http://localhost:3002/electric/overview
 curl http://localhost:3002/api/electric/factories
 ```
