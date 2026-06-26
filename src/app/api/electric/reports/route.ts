@@ -116,6 +116,32 @@ export async function GET(request: NextRequest) {
   const totalOffPeak = rows.reduce((sum, row) => sum + (row.consOffPeak ?? 0), 0);
   const daysWithData = byDateMap.size;
 
+  // So sánh với kỳ trước liền kề (cùng độ dài ngày) để tính % tăng/giảm
+  let prevPeriodConsumption = 0;
+  let trendPercent: number | null = null;
+  if (startDate && endDate) {
+    const start = toRecordDate(startDate);
+    const end = toRecordDate(endDate);
+    const spanMs = end.getTime() - start.getTime();
+    const prevEnd = new Date(start.getTime() - 24 * 60 * 60 * 1000);
+    const prevStart = new Date(prevEnd.getTime() - spanMs);
+
+    const prevRows = await prisma.powerRecord.findMany({
+      where: {
+        recordDate: { gte: prevStart, lte: prevEnd },
+        meter: {
+          transformerId: transformerId || undefined,
+          groupId: meterGroupId || undefined,
+          transformer: factoryId ? { factoryId } : undefined,
+        },
+      },
+      select: { consTotal: true },
+    });
+
+    prevPeriodConsumption = prevRows.reduce((sum, row) => sum + row.consTotal, 0);
+    trendPercent = prevPeriodConsumption > 0 ? ((totalConsumption - prevPeriodConsumption) / prevPeriodConsumption) * 100 : null;
+  }
+
   return NextResponse.json({
     summary: {
       totalConsumption,
@@ -125,8 +151,8 @@ export async function GET(request: NextRequest) {
       totalOffPeak,
       avgPerDay: daysWithData ? totalConsumption / daysWithData : 0,
       daysWithData,
-      prevPeriodConsumption: 0,
-      trendPercent: null,
+      prevPeriodConsumption,
+      trendPercent,
     },
     byDate: Array.from(byDateMap.values()),
     byMeter: Array.from(byMeterMap.values()).sort((a, b) => b.consTotal - a.consTotal),

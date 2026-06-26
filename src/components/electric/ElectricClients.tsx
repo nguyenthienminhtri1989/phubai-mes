@@ -2,9 +2,12 @@
 
 import {
   ApiOutlined,
+  ArrowDownOutlined,
+  ArrowUpOutlined,
   DeleteOutlined,
   DollarOutlined,
   EditOutlined,
+  FireOutlined,
   PlusOutlined,
   ReloadOutlined,
   SaveOutlined,
@@ -23,6 +26,7 @@ import {
   Modal,
   Popconfirm,
   Row,
+  Segmented,
   Select,
   Space,
   Statistic,
@@ -38,6 +42,7 @@ import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { DonutChart, RankedBarChart, TrendLineChart } from "./Charts";
 import { MeterFace } from "./MeterFace";
 
 function useRole() {
@@ -178,7 +183,10 @@ type ReportData = {
     totalOffPeak: number;
     avgPerDay: number;
     daysWithData: number;
+    prevPeriodConsumption: number;
+    trendPercent: number | null;
   };
+  byDate: Array<{ date: string; consTotal: number; costTotal: number }>;
   byMeter: Array<{
     meterId: string;
     meterCode: string;
@@ -186,6 +194,13 @@ type ReportData = {
     factoryName?: string;
     groupName: string;
     substationName: string;
+    consTotal: number;
+    costTotal: number;
+  }>;
+  byGroup?: Array<{
+    groupId: string | null;
+    groupCode: string;
+    groupName: string;
     consTotal: number;
     costTotal: number;
   }>;
@@ -768,10 +783,102 @@ export function ElectricPricesClient() {
 }
 
 export function ElectricReportsClient() {
-  const [range, setRange] = useState<[Dayjs, Dayjs]>([dayjs().startOf("month"), dayjs()]); const [report, setReport] = useState<ReportData | null>(null); const [loading, setLoading] = useState(false);
-  const load = useCallback(async () => { setLoading(true); try { const url = "/api/electric/reports?startDate=" + range[0].format("YYYY-MM-DD") + "&endDate=" + range[1].format("YYYY-MM-DD"); setReport(await fetchJson<ReportData>(url)); } catch (error) { message.error(error instanceof Error ? error.message : "Không tải được báo cáo điện năng"); } finally { setLoading(false); } }, [range]);
+  const [range, setRange] = useState<[Dayjs, Dayjs]>([dayjs().startOf("month"), dayjs()]);
+  const [groupBy, setGroupBy] = useState<"day" | "month">("day");
+  const [report, setReport] = useState<ReportData | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const url =
+        "/api/electric/reports?startDate=" + range[0].format("YYYY-MM-DD") +
+        "&endDate=" + range[1].format("YYYY-MM-DD") +
+        "&groupBy=" + groupBy;
+      setReport(await fetchJson<ReportData>(url));
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "Không tải được báo cáo điện năng");
+    } finally {
+      setLoading(false);
+    }
+  }, [range, groupBy]);
+
   useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
-  return <><PageTitle title="Báo cáo điện năng" subtitle="Tổng hợp PowerRecord theo nhà máy, trạm, đồng hồ và nhóm đồng hồ." /><Space wrap style={{ marginBottom: 16 }}><DatePicker.RangePicker value={range} onChange={(value) => value && setRange(value as [Dayjs, Dayjs])} /><Button icon={<ReloadOutlined />} onClick={load} loading={loading}>Làm mới</Button></Space><Row gutter={[12,12]} style={{ marginBottom: 16 }}><Col xs={24} md={6}><Card><Statistic title="Tổng tiêu thụ" value={report?.summary.totalConsumption || 0} precision={2} suffix="kWh" prefix={<ThunderboltOutlined />} /></Card></Col><Col xs={24} md={6}><Card><Statistic title="Chi phí điện" value={report?.summary.totalCost || 0} precision={0} suffix="VNĐ" prefix={<DollarOutlined />} /></Card></Col><Col xs={24} md={6}><Card><Statistic title="Trung bình/ngày" value={report?.summary.avgPerDay || 0} precision={2} suffix="kWh" prefix={<ApiOutlined />} /></Card></Col><Col xs={24} md={6}><Card><Statistic title="Cao điểm / Thấp điểm" value={report?.summary.totalPeak || 0} precision={2} suffix={"/ " + fmtNumber.format(report?.summary.totalOffPeak || 0) + " kWh"} /></Card></Col></Row><Card title="Tổng hợp theo nhà máy" style={{ marginBottom: 16 }}><Table rowKey={(record) => record.factoryId || record.factoryCode} loading={loading} dataSource={report?.byFactory || []} pagination={false} columns={[{ title: "Nhà máy", dataIndex: "factoryName" }, { title: "Tiêu thụ", dataIndex: "consTotal", align: "right", render: (value: number) => fmtNumber.format(value) + " kWh" }, { title: "Chi phí", dataIndex: "costTotal", align: "right", render: (value: number) => fmtMoney.format(value) + " VNĐ" }]} /></Card><Card title="Chi tiết theo đồng hồ"><Table rowKey="meterId" loading={loading} dataSource={report?.byMeter || []} columns={[{ title: "Mã ĐH", dataIndex: "meterCode", render: (value: string) => <Tag color="blue">{value}</Tag> }, { title: "Tên đồng hồ", dataIndex: "meterName" }, { title: "Nhà máy", dataIndex: "factoryName" }, { title: "Trạm", dataIndex: "substationName" }, { title: "Nhóm", dataIndex: "groupName" }, { title: "Tiêu thụ", dataIndex: "consTotal", align: "right", render: (value: number) => fmtNumber.format(value) + " kWh" }, { title: "Chi phí", dataIndex: "costTotal", align: "right", render: (value: number) => fmtMoney.format(value) + " VNĐ" }]} /></Card></>;
+
+  const trend = report?.summary.trendPercent;
+  const topMeters = (report?.byMeter || []).slice(0, 8).map((m) => ({ label: m.meterCode + " - " + m.meterName, value: m.consTotal, sub: m.factoryName }));
+  const topFactories = (report?.byFactory || []).slice(0, 8).map((f) => ({ label: f.factoryName, value: f.consTotal }));
+  const topConsumerShare = report && report.summary.totalConsumption > 0 && report.byMeter[0]
+    ? (report.byMeter[0].consTotal / report.summary.totalConsumption) * 100
+    : 0;
+
+  return (
+    <>
+      <PageTitle title="Báo cáo điện năng" subtitle="Tổng hợp chỉ số chốt mỗi 8h sáng (tiêu thụ ngày hôm trước) theo nhà máy, trạm, đồng hồ và nhóm đồng hồ." />
+      <Space wrap style={{ marginBottom: 16 }}>
+        <DatePicker.RangePicker value={range} onChange={(value) => value && setRange(value as [Dayjs, Dayjs])} />
+        <Segmented options={[{ label: "Theo ngày", value: "day" }, { label: "Theo tháng", value: "month" }]} value={groupBy} onChange={(value) => setGroupBy(value as "day" | "month")} />
+        <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>Làm mới</Button>
+      </Space>
+
+      <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+        <Col xs={24} md={6}>
+          <Card>
+            <Statistic title="Tổng tiêu thụ" value={report?.summary.totalConsumption || 0} precision={2} suffix="kWh" prefix={<ThunderboltOutlined />} />
+            {trend != null ? (
+              <Text type={trend >= 0 ? "danger" : "success"} style={{ fontSize: 12 }}>
+                {trend >= 0 ? <ArrowUpOutlined /> : <ArrowDownOutlined />} {Math.abs(trend).toFixed(1)}% so với kỳ trước
+              </Text>
+            ) : <Text type="secondary" style={{ fontSize: 12 }}>Chưa có dữ liệu kỳ trước để so sánh</Text>}
+          </Card>
+        </Col>
+        <Col xs={24} md={6}><Card><Statistic title="Chi phí điện" value={report?.summary.totalCost || 0} precision={0} suffix="VNĐ" prefix={<DollarOutlined />} /></Card></Col>
+        <Col xs={24} md={6}><Card><Statistic title="Trung bình/ngày" value={report?.summary.avgPerDay || 0} precision={2} suffix="kWh" prefix={<ApiOutlined />} /></Card></Col>
+        <Col xs={24} md={6}>
+          <Card>
+            <Statistic title="Đồng hồ tốn điện nhất" value={topConsumerShare} precision={1} suffix="% tổng tiêu thụ" prefix={<FireOutlined style={{ color: "#fa541c" }} />} />
+            <Text type="secondary" style={{ fontSize: 12 }}>{report?.byMeter[0] ? report.byMeter[0].meterCode + " - " + report.byMeter[0].meterName : "---"}</Text>
+          </Card>
+        </Col>
+      </Row>
+
+      <Card title="Xu hướng tiêu thụ điện" style={{ marginBottom: 16 }} loading={loading}>
+        <TrendLineChart data={(report?.byDate || []).map((d) => ({ label: groupBy === "month" ? d.date : dayjs(d.date).format("DD/MM"), consTotal: d.consTotal, costTotal: d.costTotal }))} />
+      </Card>
+
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col xs={24} lg={12}>
+          <Card title="Top đồng hồ tiêu thụ nhiều nhất" loading={loading}>
+            <RankedBarChart data={topMeters} />
+          </Card>
+        </Col>
+        <Col xs={24} lg={12}>
+          <Card title="Tỷ trọng theo khung giờ (Trung thế)" loading={loading}>
+            <DonutChart
+              data={[
+                { label: "Bình thường", value: report?.summary.totalNormal || 0, color: "#1677ff" },
+                { label: "Cao điểm", value: report?.summary.totalPeak || 0, color: "#f5222d" },
+                { label: "Thấp điểm", value: report?.summary.totalOffPeak || 0, color: "#52c41a" },
+              ]}
+            />
+          </Card>
+        </Col>
+      </Row>
+
+      {topFactories.length > 1 ? (
+        <Card title="So sánh tiêu thụ theo nhà máy" style={{ marginBottom: 16 }} loading={loading}>
+          <RankedBarChart data={topFactories} />
+        </Card>
+      ) : null}
+
+      <Card title="Tổng hợp theo nhà máy" style={{ marginBottom: 16 }}>
+        <Table rowKey={(record) => record.factoryId || record.factoryCode} loading={loading} dataSource={report?.byFactory || []} pagination={false} columns={[{ title: "Nhà máy", dataIndex: "factoryName" }, { title: "Tiêu thụ", dataIndex: "consTotal", align: "right", render: (value: number) => fmtNumber.format(value) + " kWh" }, { title: "Chi phí", dataIndex: "costTotal", align: "right", render: (value: number) => fmtMoney.format(value) + " VNĐ" }]} />
+      </Card>
+      <Card title="Chi tiết theo đồng hồ">
+        <Table rowKey="meterId" loading={loading} dataSource={report?.byMeter || []} columns={[{ title: "Mã ĐH", dataIndex: "meterCode", render: (value: string) => <Tag color="blue">{value}</Tag> }, { title: "Tên đồng hồ", dataIndex: "meterName" }, { title: "Nhà máy", dataIndex: "factoryName" }, { title: "Trạm", dataIndex: "substationName" }, { title: "Nhóm", dataIndex: "groupName" }, { title: "Tiêu thụ", dataIndex: "consTotal", align: "right", render: (value: number) => fmtNumber.format(value) + " kWh" }, { title: "Chi phí", dataIndex: "costTotal", align: "right", render: (value: number) => fmtMoney.format(value) + " VNĐ" }]} />
+      </Card>
+    </>
+  );
 }
 
 export function ElectricOverviewClient() {
