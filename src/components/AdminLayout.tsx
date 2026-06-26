@@ -25,6 +25,7 @@ import {
   Layout,
   Menu,
   Tooltip,
+  theme,
 } from "antd";
 import type { MenuProps } from "antd";
 import { signOut, useSession } from "next-auth/react";
@@ -474,7 +475,83 @@ export function AdminLayout({ children }: AdminLayoutProps) {
   );
 
   return (
-    <>
+    <ConfigProvider
+      theme={{
+        algorithm: theme.darkAlgorithm,
+        token: {
+          colorBgBase: COLORS.bg,
+          colorBgContainer: "#111827",
+          colorBgElevated: "#1a2235",
+          colorBgLayout: COLORS.bg,
+          colorBorder: "rgba(0,208,255,0.12)",
+          colorBorderSecondary: "rgba(0,208,255,0.07)",
+          colorText: COLORS.text,
+          colorTextSecondary: "#94a3b8",
+          colorTextTertiary: "#64748b",
+          colorPrimary: COLORS.accent,
+          colorLink: COLORS.accent,
+          colorSuccess: COLORS.success,
+          colorError: COLORS.danger,
+          colorWarning: COLORS.gold,
+          borderRadius: 8,
+          fontFamily: "var(--font-geist-sans), -apple-system, sans-serif",
+        },
+        components: {
+          Card: {
+            colorBgContainer: "#111827",
+            colorBorderSecondary: "rgba(0,208,255,0.1)",
+          },
+          Table: {
+            colorBgContainer: "#111827",
+            headerBg: "#0d1220",
+            rowHoverBg: "rgba(0,208,255,0.04)",
+            borderColor: "rgba(0,208,255,0.08)",
+          },
+          Modal: {
+            contentBg: "#111827",
+            headerBg: "#0d1220",
+          },
+          Tabs: {
+            colorBgContainer: "transparent",
+          },
+          Select: {
+            colorBgContainer: "#1a2235",
+            colorBgElevated: "#1a2235",
+          },
+          DatePicker: {
+            colorBgContainer: "#1a2235",
+            colorBgElevated: "#1a2235",
+          },
+          Input: {
+            colorBgContainer: "#1a2235",
+          },
+          InputNumber: {
+            colorBgContainer: "#1a2235",
+          },
+          Segmented: {
+            trackBg: "#0d1220",
+            itemSelectedBg: "#1a2235",
+            itemColor: "#94a3b8",
+            itemSelectedColor: COLORS.accent,
+          },
+          Dropdown: {
+            colorBgElevated: "#1a2235",
+          },
+          Tooltip: {
+            colorBgSpotlight: "#1a2235",
+          },
+          Statistic: {
+            colorTextDescription: "#94a3b8",
+          },
+          Alert: {
+            colorInfoBg: "rgba(0,208,255,0.08)",
+            colorInfoBorder: "rgba(0,208,255,0.2)",
+            colorWarningBg: "rgba(245,166,35,0.1)",
+            colorWarningBorder: "rgba(245,166,35,0.3)",
+          },
+        },
+      }}
+    >
       {/* Global styles */}
       <style>{`
         @keyframes pulse-dot {
@@ -816,6 +893,6 @@ export function AdminLayout({ children }: AdminLayoutProps) {
         open={passwordModalOpen}
         onClose={() => setPasswordModalOpen(false)}
       />
-    </>
+    </ConfigProvider>
   );
 }
