@@ -8,6 +8,7 @@ import {
   DollarOutlined,
   EditOutlined,
   FireOutlined,
+  MinusCircleOutlined,
   PlusOutlined,
   ReloadOutlined,
   SaveOutlined,
@@ -34,6 +35,7 @@ import {
   Table,
   Tabs,
   Tag,
+  TimePicker,
   Typography,
   message,
 } from "antd";
@@ -1003,10 +1005,24 @@ const tariffPriceTypeName: Record<string, string> = { NORMAL: "Bình thường",
 const tariffPriceTypeColor: Record<string, string> = { NORMAL: "blue", PEAK: "red", OFF_PEAK: "green" };
 const tariffDayTypeName: Record<string, string> = { WEEKDAY: "Thứ 2 - Thứ 7", SUNDAY: "Chủ Nhật" };
 
+const tariffDayTypeOptions = [
+  { label: "Thứ 2 - Thứ 7", value: "WEEKDAY" },
+  { label: "Chủ Nhật", value: "SUNDAY" },
+];
+const tariffPriceTypeOptions = [
+  { label: "Bình thường", value: "NORMAL" },
+  { label: "Cao điểm", value: "PEAK" },
+  { label: "Thấp điểm", value: "OFF_PEAK" },
+];
+
 function TariffScheduleCard() {
   const { canManageCatalog } = useRole();
   const [versions, setVersions] = useState<TariffScheduleVersion[]>([]);
   const [loading, setLoading] = useState(false);
+  const [editing, setEditing] = useState<TariffScheduleVersion | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form] = Form.useForm();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1031,6 +1047,42 @@ function TariffScheduleCard() {
     }
   };
 
+  const openEdit = (version: TariffScheduleVersion) => {
+    setEditing(version);
+    form.setFieldsValue({
+      ranges: version.ranges
+        .slice()
+        .sort((a, b) => a.startMinute - b.startMinute)
+        .map((r) => ({
+          dayType: r.dayType,
+          priceType: r.priceType,
+          range: [dayjs().startOf("day").add(r.startMinute, "minute"), dayjs().startOf("day").add(r.endMinute, "minute")],
+        })),
+    });
+    setModalOpen(true);
+  };
+
+  const saveRanges = async (values: { ranges: Array<{ dayType: string; priceType: string; range: [Dayjs, Dayjs] }> }) => {
+    if (!editing) return;
+    setSaving(true);
+    try {
+      const ranges = values.ranges.map((r) => ({
+        dayType: r.dayType,
+        priceType: r.priceType,
+        startMinute: r.range[0].hour() * 60 + r.range[0].minute(),
+        endMinute: r.range[1].hour() * 60 + r.range[1].minute() || 1440,
+      }));
+      await fetchJson("/api/electric/tariff-schedule", postBody("PUT", { id: editing.id, ranges }));
+      message.success("Đã lưu biểu khung giờ");
+      setModalOpen(false);
+      await load();
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "Không lưu được biểu khung giờ");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <Card title="Biểu khung giờ áp dụng tính tiền điện" style={{ marginTop: 16 }} loading={loading}>
       <Text type="secondary" style={{ display: "block", marginBottom: 16 }}>
@@ -1049,10 +1101,15 @@ function TariffScheduleCard() {
             </Space>
           }
           extra={
-            !version.isActive && canManageCatalog ? (
-              <Popconfirm title="Kích hoạt phiên bản khung giờ này để tính tiền điện?" onConfirm={() => activate(version.id)}>
-                <Button size="small">Kích hoạt</Button>
-              </Popconfirm>
+            canManageCatalog ? (
+              <Space>
+                <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(version)}>Sửa khoảng giờ</Button>
+                {!version.isActive ? (
+                  <Popconfirm title="Kích hoạt phiên bản khung giờ này để tính tiền điện?" onConfirm={() => activate(version.id)}>
+                    <Button size="small">Kích hoạt</Button>
+                  </Popconfirm>
+                ) : null}
+              </Space>
             ) : null
           }
         >
@@ -1074,6 +1131,41 @@ function TariffScheduleCard() {
           ))}
         </Card>
       ))}
+      <Modal
+        title={`Sửa khoảng giờ - ${editing?.name || ""}`}
+        open={modalOpen}
+        onCancel={() => setModalOpen(false)}
+        onOk={() => form.submit()}
+        confirmLoading={saving}
+        width={760}
+        destroyOnHidden
+      >
+        <Form form={form} layout="vertical" onFinish={saveRanges}>
+          <Form.List name="ranges">
+            {(fields, { add, remove }) => (
+              <>
+                {fields.map((field) => (
+                  <Space key={field.key} align="baseline" style={{ display: "flex", marginBottom: 8 }} wrap>
+                    <Form.Item name={[field.name, "dayType"]} rules={[{ required: true, message: "Chọn ngày" }]} style={{ width: 140, marginBottom: 0 }}>
+                      <Select placeholder="Loại ngày" options={tariffDayTypeOptions} />
+                    </Form.Item>
+                    <Form.Item name={[field.name, "priceType"]} rules={[{ required: true, message: "Chọn khung giá" }]} style={{ width: 140, marginBottom: 0 }}>
+                      <Select placeholder="Khung giá" options={tariffPriceTypeOptions} />
+                    </Form.Item>
+                    <Form.Item name={[field.name, "range"]} rules={[{ required: true, message: "Chọn giờ" }]} style={{ marginBottom: 0 }}>
+                      <TimePicker.RangePicker format="HH:mm" minuteStep={30} />
+                    </Form.Item>
+                    <MinusCircleOutlined onClick={() => remove(field.name)} />
+                  </Space>
+                ))}
+                <Button type="dashed" icon={<PlusOutlined />} onClick={() => add()} block>
+                  Thêm khoảng giờ
+                </Button>
+              </>
+            )}
+          </Form.List>
+        </Form>
+      </Modal>
     </Card>
   );
 }

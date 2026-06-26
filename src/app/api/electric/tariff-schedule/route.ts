@@ -13,12 +13,26 @@ export async function GET() {
 
 type RangeInput = { dayType: string; priceType: string; startMinute: number; endMinute: number };
 
+function minutesToHHMM(minute: number) {
+  return `${String(Math.floor(minute / 60)).padStart(2, "0")}:${String(minute % 60).padStart(2, "0")}`;
+}
+
 function validateRanges(ranges: RangeInput[]) {
   for (const range of ranges) {
     if (!["WEEKDAY", "SUNDAY"].includes(range.dayType)) return "dayType không hợp lệ";
     if (!["NORMAL", "PEAK", "OFF_PEAK"].includes(range.priceType)) return "priceType không hợp lệ";
     if (range.startMinute < 0 || range.endMinute > 1440 || range.endMinute <= range.startMinute) {
       return `Khoảng giờ không hợp lệ: ${range.startMinute}-${range.endMinute}`;
+    }
+  }
+
+  // Tai 1 thoi diem chi thuoc duy nhat 1 khung gia, nen cac khoang gio cung dayType khong duoc chong nhau.
+  for (const dayType of ["WEEKDAY", "SUNDAY"]) {
+    const sorted = ranges.filter((r) => r.dayType === dayType).sort((a, b) => a.startMinute - b.startMinute);
+    for (let i = 1; i < sorted.length; i++) {
+      if (sorted[i].startMinute < sorted[i - 1].endMinute) {
+        return `Khoảng giờ chồng nhau (${dayType}): ${minutesToHHMM(sorted[i - 1].startMinute)}-${minutesToHHMM(sorted[i - 1].endMinute)} và ${minutesToHHMM(sorted[i].startMinute)}-${minutesToHHMM(sorted[i].endMinute)}`;
+      }
     }
   }
   return null;
