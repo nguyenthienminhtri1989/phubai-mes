@@ -111,7 +111,9 @@ Các page hiện có:
 - `src/app/electric/overview/page.tsx`
 - `src/app/electric/catalog/page.tsx`
 - `src/app/electric/daily-input/page.tsx`
+- `src/app/electric/daily-input/page.tsx` dùng màn nhập tay vận hành: lọc theo ngày/nhà máy/trạm/nhóm/chế độ, ưu tiên đồng hồ chưa chốt, cho phép nhập MANUAL cho đồng hồ thường và khi AUTO gặp sự cố Gateway/mạng.
 - `src/app/electric/live/page.tsx`
+- `src/app/electric/live/page.tsx` hỗ trợ lọc đồng hồ AUTO theo Factory/PowerTransformer/PowerMeterGroup, nhưng chỉ đọc realtime một đồng hồ mỗi lần qua `/api/electric/live` để tránh quá tải Gateway/Modbus.
 - `src/app/electric/reports/page.tsx`
 - `src/app/electric/prices/page.tsx`
 
@@ -249,3 +251,5 @@ Migrations chính:
 | 2026-06-25 | Chuyển `scripts/energy-cron.js` sang JS thuần dùng `pg` + `modbus-serial`, không cần `tsx`, để test và chạy PM2 ổn định trên Windows. | `scripts/energy-cron.js`, `package.json`, `ecosystem.config.cjs`, `BUSINESS_LOGIC_CONTEXT.md` | `node --check scripts/energy-cron.js`, `npm run energy:cron -- --status` |
 | 2026-06-25 | Port lại logic cron ERP ổn định: nhóm đồng hồ theo Gateway, mở TCP một lần cho mỗi Gateway, đọc từng Modbus ID rồi mới đóng kết nối. | `scripts/energy-cron.js`, `BUSINESS_LOGIC_CONTEXT.md` | `node --check scripts/energy-cron.js`, `npm run energy:cron -- --status`, `npm run lint` |
 | 2026-06-25 | Thiết kế lại workflow deploy MES theo mẫu ERP: trước checkout chỉ dừng app MES, sau build chỉ start/reload app MES bằng `--only`, không động app khác. | `.github/workflows/deploy.yml`, `HUONG-DAN-DEPLOY-PHUBAI-MES.md`, `BUSINESS_LOGIC_CONTEXT.md` | Kiểm tra workflow chỉ dùng `phubai-mes-web`, `phubai-mes-energy-cron`, port `3002` |
+| 2026-06-26 | Bổ sung bộ lọc cho `/electric/live` theo nhà máy/trạm biến áp/nhóm đồng hồ, giữ thao tác đọc realtime ở một đồng hồ mỗi lần để tránh quá tải Gateway/Modbus. | `src/components/electric/ElectricClients.tsx`, `BUSINESS_LOGIC_CONTEXT.md` | `npx eslint src/components/electric/ElectricClients.tsx`, `npm run build` |
+| 2026-06-26 | Thiết kế lại `/electric/daily-input` thành màn nhập tay trực quan: bộ lọc ngày/nhà máy/trạm/nhóm, dashboard tiến độ, danh sách cần nhập, modal có chỉ số kỳ trước và ước tính kWh cho MANUAL/AUTO fallback. | `src/components/electric/ElectricClients.tsx`, `BUSINESS_LOGIC_CONTEXT.md` | `npx eslint src/components/electric/ElectricClients.tsx`, `npm run build` |

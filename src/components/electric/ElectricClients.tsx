@@ -600,29 +600,84 @@ export function ElectricCatalogClient() {
 export function ElectricDailyInputClient() {
   const { canEditDaily } = useRole();
   const [selectedDate, setSelectedDate] = useState<Dayjs>(dayjs().subtract(1, "day"));
+  const [factories, setFactories] = useState<Factory[]>([]);
   const [transformers, setTransformers] = useState<Transformer[]>([]);
+  const [groups, setGroups] = useState<MeterGroup[]>([]);
   const [meters, setMeters] = useState<ElectricMeter[]>([]);
+  const [selectedFactory, setSelectedFactory] = useState<string>();
   const [selectedTransformer, setSelectedTransformer] = useState<string>();
+  const [selectedGroup, setSelectedGroup] = useState<string>();
+  const [modeFilter, setModeFilter] = useState<"all" | "manual" | "auto">("all");
+  const [statusFilter, setStatusFilter] = useState<"needsInput" | "all" | "done">("needsInput");
+  const [keyword, setKeyword] = useState("");
   const [currentMeter, setCurrentMeter] = useState<ElectricMeter | null>(null);
+  const [currentLastRecord, setCurrentLastRecord] = useState<PowerRecord | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [form] = Form.useForm();
+  const watchedValues = Form.useWatch([], form) as Record<string, number | boolean | string | undefined> | undefined;
 
-  useEffect(() => { fetchJson<Transformer[]>("/api/electric/substations").then(setTransformers).catch(() => message.error("Không tải được trạm biến áp")); }, []);
+  useEffect(() => {
+    Promise.all([
+      fetchJson<Factory[]>("/api/electric/factories"),
+      fetchJson<Transformer[]>("/api/electric/substations"),
+      fetchJson<MeterGroup[]>("/api/electric/meter-groups"),
+    ])
+      .then(([nextFactories, nextTransformers, nextGroups]) => {
+        setFactories(nextFactories.filter((item) => item.isActive));
+        setTransformers(nextTransformers.filter((item) => item.isActive));
+        setGroups(nextGroups.filter((item) => item.isActive));
+      })
+      .catch(() => message.error("Không tải được danh mục điện năng"));
+  }, []);
+
+  const filteredTransformers = useMemo(
+    () => transformers.filter((item) => !selectedFactory || item.factoryId === selectedFactory),
+    [transformers, selectedFactory],
+  );
 
   const loadMeters = useCallback(async () => {
-    if (!selectedTransformer) return;
     setLoading(true);
-    try { setMeters(await fetchJson<ElectricMeter[]>("/api/electric/daily-status?substationId=" + selectedTransformer + "&date=" + selectedDate.format("YYYY-MM-DD"))); }
-    catch (error) { message.error(error instanceof Error ? error.message : "Không tải được trạng thái chốt số"); }
-    finally { setLoading(false); }
-  }, [selectedDate, selectedTransformer]);
+    try {
+      const params = new URLSearchParams({ date: selectedDate.format("YYYY-MM-DD") });
+      if (selectedTransformer) params.set("substationId", selectedTransformer);
+      if (!selectedTransformer && selectedFactory) params.set("factoryId", selectedFactory);
+      setMeters(await fetchJson<ElectricMeter[]>("/api/electric/daily-status?" + params.toString()));
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "Không tải được trạng thái chốt số");
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedDate, selectedFactory, selectedTransformer]);
 
-  useEffect(() => { const timer = window.setTimeout(() => void loadMeters(), 0); return () => window.clearTimeout(timer); }, [loadMeters]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadMeters(), 0);
+    return () => window.clearTimeout(timer);
+  }, [loadMeters]);
+
+  const displayedMeters = useMemo(() => meters.filter((meter) => {
+    const normalizedKeyword = keyword.trim().toLowerCase();
+    if (selectedGroup && meter.groupId !== selectedGroup) return false;
+    if (modeFilter === "manual" && meter.isAuto) return false;
+    if (modeFilter === "auto" && !meter.isAuto) return false;
+    if (statusFilter === "needsInput" && meter.todayRecord) return false;
+    if (statusFilter === "done" && !meter.todayRecord) return false;
+    if (!normalizedKeyword) return true;
+    return [meter.code, meter.name, meter.meterNo || ""].some((value) => value.toLowerCase().includes(normalizedKeyword));
+  }), [meters, selectedGroup, modeFilter, statusFilter, keyword]);
+
+  const totalMeters = meters.length;
+  const doneMeters = meters.filter((meter) => meter.todayRecord).length;
+  const pendingMeters = totalMeters - doneMeters;
+  const manualPending = meters.filter((meter) => !meter.isAuto && !meter.todayRecord).length;
+  const autoFallbackPending = meters.filter((meter) => meter.isAuto && !meter.todayRecord).length;
 
   const openRecord = async (meter: ElectricMeter) => {
-    setCurrentMeter(meter); form.resetFields();
+    setCurrentMeter(meter);
+    setCurrentLastRecord(null);
+    form.resetFields();
     const lastRecord = await fetchJson<PowerRecord | null>("/api/electric/last-record?meterId=" + meter.id + "&date=" + selectedDate.format("YYYY-MM-DD"));
+    setCurrentLastRecord(lastRecord);
     if (meter.type === 2) {
       form.setFieldsValue({
         meterId: meter.id,
@@ -632,37 +687,172 @@ export function ElectricDailyInputClient() {
         note: meter.todayRecord?.note ?? undefined,
       });
     } else {
-      form.setFieldsValue({ meterId: meter.id, prevTotal: meter.todayRecord?.prevTotal ?? lastRecord?.currTotal ?? 0, currTotal: meter.todayRecord?.currTotal ?? undefined, unitPrice: meter.todayRecord?.unitPrice ?? undefined, isReset: meter.todayRecord?.isReset ?? false, note: meter.todayRecord?.note ?? undefined });
+      form.setFieldsValue({
+        meterId: meter.id,
+        prevTotal: meter.todayRecord?.prevTotal ?? lastRecord?.currTotal ?? 0,
+        currTotal: meter.todayRecord?.currTotal ?? undefined,
+        unitPrice: meter.todayRecord?.unitPrice ?? undefined,
+        isReset: meter.todayRecord?.isReset ?? false,
+        note: meter.todayRecord?.note ?? undefined,
+      });
     }
     setModalOpen(true);
   };
 
   const saveRecord = async () => {
     const values = await form.validateFields();
-    if (currentMeter?.type !== 2 && !values.isReset && Number(values.currTotal || 0) < Number(values.prevTotal || 0)) { message.error("Chỉ số sau nhỏ hơn chỉ số trước. Bật reset nếu đã thay đồng hồ."); return; }
+    if (currentMeter?.type !== 2 && !values.isReset && Number(values.currTotal || 0) < Number(values.prevTotal || 0)) {
+      message.error("Chỉ số sau nhỏ hơn chỉ số trước. Bật reset nếu đã thay đồng hồ.");
+      return;
+    }
     await fetchJson("/api/electric/daily-input", postBody("POST", { ...values, recordDate: selectedDate.format("YYYY-MM-DD") }));
-    message.success("Đã chốt chỉ số MANUAL"); setModalOpen(false); await loadMeters();
+    message.success("Đã chốt chỉ số MANUAL");
+    setModalOpen(false);
+    await loadMeters();
   };
 
-  return <><PageTitle title="Nhập chỉ số điện" subtitle="Chốt chỉ số thủ công MANUAL và theo dõi bản ghi AUTO đã chốt trong ngày." /><Row gutter={[12,12]} style={{ marginBottom: 16 }}><Col xs={24} md={8}><DatePicker value={selectedDate} onChange={(value) => value && setSelectedDate(value)} style={{ width: "100%" }} /></Col><Col xs={24} md={10}><Select placeholder="Chọn trạm biến áp" value={selectedTransformer} onChange={setSelectedTransformer} options={transformers.map((item) => ({ label: item.factory ? item.factory.name + " - " + item.name : item.name, value: item.id }))} style={{ width: "100%" }} /></Col><Col xs={24} md={6}><Button icon={<ReloadOutlined />} onClick={loadMeters} loading={loading} block>Tải dữ liệu</Button></Col></Row><Row gutter={[12,12]} style={{ marginBottom: 16 }}><Col xs={24} md={8}><Card><Statistic title="Tiến độ chốt" value={meters.filter((meter) => meter.todayRecord).length} suffix={"/ " + meters.length + " đồng hồ"} /></Card></Col></Row>{!selectedTransformer ? <Card><Empty description="Chọn trạm biến áp để nhập/chốt chỉ số" /></Card> : <Table rowKey="id" loading={loading} dataSource={meters} columns={[{ title: "Mã", dataIndex: "code", render: (value: string) => <b>{value}</b> }, { title: "Tên đồng hồ", dataIndex: "name" }, { title: "Loại", dataIndex: "type", render: (value: number) => value === 2 ? <Tag color="purple">Trung thế</Tag> : <Tag color="blue">Hạ thế</Tag> }, { title: "Chế độ", dataIndex: "isAuto", render: (value: boolean) => <Tag color={value ? "green" : "gold"}>{value ? "AUTO" : "MANUAL"}</Tag> }, { title: "Trạng thái", render: (_: unknown, record: ElectricMeter) => record.todayRecord ? <Tag color={record.todayRecord.dataSource === "AUTO" ? "green" : "orange"}>{record.todayRecord.dataSource}</Tag> : <Tag>Chưa chốt</Tag> }, { title: "Tiêu thụ", render: (_: unknown, record: ElectricMeter) => record.todayRecord ? fmtNumber.format(record.todayRecord.consTotal) + " kWh" : "---" }, { title: "Thao tác", render: (_: unknown, record: ElectricMeter) => canEditDaily ? <Button icon={<EditOutlined />} onClick={() => openRecord(record)}>Nhập MANUAL</Button> : null }]} />}<Modal title={"Chốt chỉ số: " + (currentMeter?.code || "")} open={modalOpen} onCancel={() => setModalOpen(false)} onOk={saveRecord} okText="Lưu MANUAL"><Form form={form} layout="vertical"><Alert type="warning" showIcon style={{ marginBottom: 12 }} message="Đồng hồ AUTO chỉ nên nhập tay khi gateway hoặc telemetry gặp sự cố." /><Form.Item name="meterId" hidden><Input /></Form.Item>{currentMeter?.type === 2 ? <><Alert type="info" showIcon style={{ marginBottom: 12 }} message="Đồng hồ trung thế: nhập 3 chỉ số hiển thị trên mặt đồng hồ điện tử, hệ thống tự tính tiêu thụ và tiền điện theo từng khung giờ." /><Row gutter={12}><Col span={8}><Form.Item name="currNormal" label="Chỉ số Bình thường" rules={[{ required: true }]}><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col><Col span={8}><Form.Item name="currPeak" label="Chỉ số Cao điểm" rules={[{ required: true }]}><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col><Col span={8}><Form.Item name="currOffPeak" label="Chỉ số Thấp điểm" rules={[{ required: true }]}><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col></Row></> : <><Form.Item name="isReset" label="Reset / thay đồng hồ" valuePropName="checked"><Switch /></Form.Item><Row gutter={12}><Col span={12}><Form.Item name="prevTotal" label="Chỉ số trước"><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col><Col span={12}><Form.Item name="currTotal" label="Chỉ số sau" rules={[{ required: true }]}><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col><Col span={12}><Form.Item name="unitPrice" label="Đơn giá"><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col></Row></>}<Form.Item name="note" label="Ghi chú"><Input.TextArea rows={2} /></Form.Item></Form></Modal></>;
+  const lowVoltageDelta = currentMeter?.type !== 2
+    ? ((watchedValues?.isReset ? Number(watchedValues?.currTotal || 0) : Math.max(0, Number(watchedValues?.currTotal || 0) - Number(watchedValues?.prevTotal || 0))) * (currentMeter?.tu || 1) * (currentMeter?.ti || 1))
+    : 0;
+  const mediumVoltageDelta = currentMeter?.type === 2
+    ? ([
+        Math.max(0, Number(watchedValues?.currNormal || 0) - Number(currentLastRecord?.currNormal || 0)),
+        Math.max(0, Number(watchedValues?.currPeak || 0) - Number(currentLastRecord?.currPeak || 0)),
+        Math.max(0, Number(watchedValues?.currOffPeak || 0) - Number(currentLastRecord?.currOffPeak || 0)),
+      ].reduce((sum, value) => sum + value, 0) * (currentMeter?.tu || 1) * (currentMeter?.ti || 1))
+    : 0;
+
+  return (
+    <>
+      <PageTitle title="Nhập chỉ số điện" subtitle="Màn hình nhập tay cho đồng hồ MANUAL và các tình huống AUTO bị mất mạng, đứt cáp hoặc lỗi Gateway." />
+
+      <Card style={{ marginBottom: 16 }}>
+        <Row gutter={[12, 12]} align="middle">
+          <Col xs={24} md={6} lg={4}><DatePicker value={selectedDate} onChange={(value) => value && setSelectedDate(value)} style={{ width: "100%" }} /></Col>
+          <Col xs={24} md={6} lg={5}><Select allowClear placeholder="Nhà máy" value={selectedFactory} onChange={(value) => { setSelectedFactory(value); setSelectedTransformer(undefined); }} options={factories.map((item) => ({ label: item.name, value: item.id }))} style={{ width: "100%" }} /></Col>
+          <Col xs={24} md={8} lg={6}><Select allowClear showSearch optionFilterProp="label" placeholder="Trạm biến áp" value={selectedTransformer} onChange={setSelectedTransformer} options={filteredTransformers.map((item) => ({ label: item.factory ? item.factory.name + " - " + item.name : item.name, value: item.id }))} style={{ width: "100%" }} /></Col>
+          <Col xs={24} md={4} lg={3}><Button icon={<ReloadOutlined />} onClick={loadMeters} loading={loading} block>Tải</Button></Col>
+          <Col xs={24} lg={6}><Input.Search allowClear placeholder="Tìm mã, tên, serial" value={keyword} onChange={(event) => setKeyword(event.target.value)} /></Col>
+        </Row>
+        <Row gutter={[12, 12]} style={{ marginTop: 12 }}>
+          <Col xs={24} md={8}><Select allowClear placeholder="Nhóm đồng hồ" value={selectedGroup} onChange={setSelectedGroup} options={groups.map((item) => ({ label: item.name, value: item.id }))} style={{ width: "100%" }} /></Col>
+          <Col xs={24} md={8}><Segmented block options={[{ label: "Cần nhập", value: "needsInput" }, { label: "Tất cả", value: "all" }, { label: "Đã chốt", value: "done" }]} value={statusFilter} onChange={(value) => setStatusFilter(value as "needsInput" | "all" | "done")} /></Col>
+          <Col xs={24} md={8}><Segmented block options={[{ label: "Tất cả", value: "all" }, { label: "MANUAL", value: "manual" }, { label: "AUTO", value: "auto" }]} value={modeFilter} onChange={(value) => setModeFilter(value as "all" | "manual" | "auto")} /></Col>
+        </Row>
+      </Card>
+
+      <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+        <Col xs={24} md={6}><Card><Statistic title="Tổng đồng hồ" value={totalMeters} suffix="đồng hồ" /></Card></Col>
+        <Col xs={24} md={6}><Card><Statistic title="MANUAL chưa chốt" value={manualPending} suffix={"/ " + pendingMeters + " chưa chốt"} valueStyle={{ color: manualPending ? "#cf1322" : "#389e0d" }} /></Card></Col>
+        <Col xs={24} md={6}><Card><Statistic title="Đã chốt" value={doneMeters} suffix={"/ " + totalMeters} /></Card></Col>
+        <Col xs={24} md={6}><Card><Statistic title="AUTO cần dự phòng" value={autoFallbackPending} suffix="đồng hồ" valueStyle={{ color: autoFallbackPending ? "#d46b08" : undefined }} /></Card></Col>
+      </Row>
+
+      <Alert
+        type={autoFallbackPending ? "warning" : "info"}
+        showIcon
+        style={{ marginBottom: 16 }}
+        message={autoFallbackPending ? "Có đồng hồ AUTO chưa chốt. Nếu Gateway/mạng lỗi, có thể nhập MANUAL tạm thời." : "Ưu tiên nhập các đồng hồ chưa chốt. Dữ liệu MANUAL vẫn được API tính lại tiêu thụ và tiền điện."}
+      />
+
+      <Table
+        rowKey="id"
+        loading={loading}
+        dataSource={displayedMeters}
+        pagination={{ pageSize: 12 }}
+        scroll={{ x: 1040 }}
+        columns={[
+          { title: "Mã", dataIndex: "code", width: 110, render: (value: string, record: ElectricMeter) => <Space direction="vertical" size={0}><b>{value}</b><Text type="secondary" style={{ fontSize: 12 }}>{record.meterNo || "---"}</Text></Space> },
+          { title: "Tên đồng hồ", dataIndex: "name" },
+          { title: "Khu vực", render: (_: unknown, record: ElectricMeter) => <Space direction="vertical" size={0}><Text>{record.transformer?.factory?.name || "---"}</Text><Text type="secondary" style={{ fontSize: 12 }}>{record.transformer?.name || "---"}</Text></Space> },
+          { title: "Nhóm", render: (_: unknown, record: ElectricMeter) => record.group?.name || "---" },
+          { title: "Loại", dataIndex: "type", render: (value: number) => value === 2 ? <Tag color="purple">Trung thế</Tag> : <Tag color="blue">Hạ thế</Tag> },
+          { title: "Chế độ", dataIndex: "isAuto", render: (value: boolean) => <Tag color={value ? "green" : "gold"}>{value ? "AUTO" : "MANUAL"}</Tag> },
+          { title: "Trạng thái", render: (_: unknown, record: ElectricMeter) => record.todayRecord ? <Tag color={record.todayRecord.dataSource === "AUTO" ? "green" : "orange"}>{record.todayRecord.dataSource}</Tag> : <Tag color={record.isAuto ? "volcano" : "red"}>{record.isAuto ? "Cần dự phòng" : "Cần nhập"}</Tag> },
+          { title: "Tiêu thụ", align: "right" as const, render: (_: unknown, record: ElectricMeter) => record.todayRecord ? fmtNumber.format(record.todayRecord.consTotal) + " kWh" : "---" },
+          { title: "Thao tác", width: 150, fixed: "right" as const, render: (_: unknown, record: ElectricMeter) => canEditDaily ? <Button type={!record.todayRecord ? "primary" : "default"} icon={<EditOutlined />} onClick={() => openRecord(record)}>{record.todayRecord ? "Sửa" : "Nhập"}</Button> : null },
+        ]}
+      />
+
+      <Modal title={(currentMeter?.todayRecord ? "Sửa chỉ số: " : "Nhập chỉ số: ") + (currentMeter?.code || "")} open={modalOpen} width={820} onCancel={() => setModalOpen(false)} onOk={saveRecord} okText="Lưu MANUAL">
+        <Form form={form} layout="vertical">
+          {currentMeter?.isAuto ? <Alert type="warning" showIcon style={{ marginBottom: 12 }} message="Đồng hồ AUTO chỉ nên nhập tay khi mạng, cáp hoặc Gateway gặp sự cố." /> : null}
+          <Form.Item name="meterId" hidden><Input /></Form.Item>
+          <Row gutter={12} style={{ marginBottom: 12 }}>
+            <Col xs={24} md={8}><Card size="small"><Statistic title="Kỳ trước" value={currentMeter?.type === 2 ? (currentLastRecord?.recordDate ? dayjs(currentLastRecord.recordDate).format("DD/MM/YYYY") : "---") : (currentLastRecord?.currTotal ?? 0)} suffix={currentMeter?.type === 2 ? undefined : "kWh"} /></Card></Col>
+            <Col xs={24} md={8}><Card size="small"><Statistic title="TU/TI" value={(currentMeter?.tu || 1) + " / " + (currentMeter?.ti || 1)} /></Card></Col>
+            <Col xs={24} md={8}><Card size="small"><Statistic title="Ước tính" value={currentMeter?.type === 2 ? mediumVoltageDelta : lowVoltageDelta} precision={2} suffix="kWh" /></Card></Col>
+          </Row>
+          {currentMeter?.type === 2 ? (
+            <>
+              <Alert type="info" showIcon style={{ marginBottom: 12 }} message="Đồng hồ trung thế: nhập 3 chỉ số hiển thị trên mặt đồng hồ. Hệ thống sẽ tính lại theo đơn giá từng khung giờ." />
+              <Row gutter={12}>
+                <Col xs={24} md={8}><Form.Item name="currNormal" label="Chỉ số Bình thường" rules={[{ required: true }]}><InputNumber min={0} style={{ width: "100%" }} /></Form.Item><Text type="secondary">Trước: {fmtNumber.format(currentLastRecord?.currNormal || 0)}</Text></Col>
+                <Col xs={24} md={8}><Form.Item name="currPeak" label="Chỉ số Cao điểm" rules={[{ required: true }]}><InputNumber min={0} style={{ width: "100%" }} /></Form.Item><Text type="secondary">Trước: {fmtNumber.format(currentLastRecord?.currPeak || 0)}</Text></Col>
+                <Col xs={24} md={8}><Form.Item name="currOffPeak" label="Chỉ số Thấp điểm" rules={[{ required: true }]}><InputNumber min={0} style={{ width: "100%" }} /></Form.Item><Text type="secondary">Trước: {fmtNumber.format(currentLastRecord?.currOffPeak || 0)}</Text></Col>
+              </Row>
+            </>
+          ) : (
+            <>
+              <Form.Item name="isReset" label="Reset / thay đồng hồ" valuePropName="checked"><Switch /></Form.Item>
+              <Row gutter={12}>
+                <Col xs={24} md={8}><Form.Item name="prevTotal" label="Chỉ số trước"><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col>
+                <Col xs={24} md={8}><Form.Item name="currTotal" label="Chỉ số sau" rules={[{ required: true }]}><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col>
+                <Col xs={24} md={8}><Form.Item name="unitPrice" label="Đơn giá"><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col>
+              </Row>
+            </>
+          )}
+          <Form.Item name="note" label="Ghi chú sự cố / lý do nhập tay"><Input.TextArea rows={2} placeholder="Vd: Gateway mất kết nối, đứt cáp mạng, thay đồng hồ..." /></Form.Item>
+        </Form>
+      </Modal>
+    </>
+  );
 }
 
 export function ElectricLiveClient() {
   const { canEditDaily } = useRole();
+  const [factories, setFactories] = useState<Factory[]>([]);
+  const [transformers, setTransformers] = useState<Transformer[]>([]);
+  const [groups, setGroups] = useState<MeterGroup[]>([]);
   const [meters, setMeters] = useState<ElectricMeter[]>([]);
-  const [selectedMeter, setSelectedMeter] = useState<string>();
+  const [filterFactoryId, setFilterFactoryId] = useState<string>();
+  const [filterTransformerId, setFilterTransformerId] = useState<string>();
+  const [filterGroupId, setFilterGroupId] = useState<string>();
+  const [selectedMeterId, setSelectedMeterId] = useState<string>();
   const [liveData, setLiveData] = useState<LiveData | null>(null);
   const [history, setHistory] = useState<Telemetry[]>([]);
   const [loading, setLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
 
   useEffect(() => {
-    fetchJson<ElectricMeter[]>("/api/electric/meters")
-      .then((data) => setMeters(data.filter((meter) => meter.isAuto)))
-      .catch(() => message.error("Không tải được đồng hồ AUTO"));
+    Promise.all([
+      fetchJson<Factory[]>("/api/electric/factories"),
+      fetchJson<Transformer[]>("/api/electric/substations"),
+      fetchJson<MeterGroup[]>("/api/electric/meter-groups"),
+      fetchJson<ElectricMeter[]>("/api/electric/meters"),
+    ])
+      .then(([nextFactories, nextTransformers, nextGroups, nextMeters]) => {
+        setFactories(nextFactories.filter((item) => item.isActive));
+        setTransformers(nextTransformers.filter((item) => item.isActive));
+        setGroups(nextGroups.filter((item) => item.isActive));
+        setMeters(nextMeters.filter((meter) => meter.isActive && meter.isAuto));
+      })
+      .catch(() => message.error("Không tải được dữ liệu realtime điện năng"));
   }, []);
 
-  const meter = meters.find((item) => item.id === selectedMeter);
+  const filteredTransformers = useMemo(
+    () => transformers.filter((item) => !filterFactoryId || item.factoryId === filterFactoryId),
+    [transformers, filterFactoryId],
+  );
+
+  const filteredMeters = useMemo(() => meters.filter((meter) => {
+    if (filterFactoryId && meter.transformer?.factoryId !== filterFactoryId) return false;
+    if (filterTransformerId && meter.transformerId !== filterTransformerId) return false;
+    if (filterGroupId && meter.groupId !== filterGroupId) return false;
+    return true;
+  }), [meters, filterFactoryId, filterTransformerId, filterGroupId]);
+
+  const meter = meters.find((item) => item.id === selectedMeterId);
 
   const loadHistory = useCallback(async (meterId: string) => {
     setHistoryLoading(true);
@@ -676,20 +866,24 @@ export function ElectricLiveClient() {
     }
   }, []);
 
-  const selectMeter = (meterId: string) => {
-    setSelectedMeter(meterId);
+  const selectMeter = (meterId?: string) => {
+    setSelectedMeterId(meterId);
     setLiveData(null);
-    void loadHistory(meterId);
+    if (meterId) {
+      void loadHistory(meterId);
+    } else {
+      setHistory([]);
+    }
   };
 
   const readLive = async () => {
-    if (!selectedMeter) { message.warning("Chọn đồng hồ AUTO cần đọc"); return; }
+    if (!selectedMeterId) { message.warning("Chọn một đồng hồ AUTO cần đọc"); return; }
     setLoading(true);
     try {
-      const data = await fetchJson<LiveData>("/api/electric/live?meterId=" + selectedMeter);
+      const data = await fetchJson<LiveData>("/api/electric/live?meterId=" + encodeURIComponent(selectedMeterId));
       setLiveData(data);
       message.success("Đã đọc realtime và lưu telemetry");
-      void loadHistory(selectedMeter);
+      void loadHistory(selectedMeterId);
     } catch (error) {
       message.error(error instanceof Error ? error.message : "Không đọc được realtime");
     } finally {
@@ -701,31 +895,47 @@ export function ElectricLiveClient() {
 
   return (
     <>
-      <PageTitle title="Realtime điện năng" subtitle="Đọc trực tiếp đồng hồ AUTO qua Modbus Gateway và lưu PowerTelemetry." />
+      <PageTitle title="Realtime điện năng" subtitle="Lọc nhanh và đọc trực tiếp từng đồng hồ AUTO qua Modbus Gateway." />
       <Card style={{ marginBottom: 16 }}>
-        <Space wrap size={12}>
-          <Select
-            placeholder="Chọn đồng hồ AUTO"
-            style={{ minWidth: 340 }}
-            value={selectedMeter}
-            onChange={selectMeter}
-            options={meters.map((item) => ({ label: item.code + " - " + item.name, value: item.id }))}
-          />
-          {canEditDaily && (
-            <Button type="primary" icon={<ThunderboltOutlined />} loading={loading} onClick={readLive} disabled={!selectedMeter}>
-              Đọc realtime
-            </Button>
-          )}
-        </Space>
+        <Row gutter={[12, 12]}>
+          <Col xs={24} md={8} lg={5}>
+            <Select allowClear placeholder="Nhà máy" style={{ width: "100%" }} value={filterFactoryId} onChange={(value) => { setFilterFactoryId(value); setFilterTransformerId(undefined); selectMeter(undefined); }} options={factories.map((item) => ({ label: item.name, value: item.id }))} />
+          </Col>
+          <Col xs={24} md={8} lg={6}>
+            <Select allowClear placeholder="Trạm biến áp" style={{ width: "100%" }} value={filterTransformerId} onChange={(value) => { setFilterTransformerId(value); selectMeter(undefined); }} options={filteredTransformers.map((item) => ({ label: item.factory ? item.factory.name + " - " + item.name : item.name, value: item.id }))} />
+          </Col>
+          <Col xs={24} md={8} lg={5}>
+            <Select allowClear placeholder="Nhóm đồng hồ" style={{ width: "100%" }} value={filterGroupId} onChange={(value) => { setFilterGroupId(value); selectMeter(undefined); }} options={groups.map((item) => ({ label: item.name, value: item.id }))} />
+          </Col>
+          <Col xs={24} lg={8}>
+            <Space wrap style={{ width: "100%" }}>
+              <Select
+                allowClear
+                showSearch
+                placeholder="Chọn đồng hồ AUTO"
+                style={{ minWidth: 280, flex: 1 }}
+                value={selectedMeterId}
+                onChange={selectMeter}
+                optionFilterProp="label"
+                options={filteredMeters.map((item) => ({ label: item.code + " - " + item.name, value: item.id }))}
+              />
+              {canEditDaily && (
+                <Button type="primary" icon={<ThunderboltOutlined />} loading={loading} onClick={readLive} disabled={!selectedMeterId}>
+                  Đọc realtime
+                </Button>
+              )}
+            </Space>
+          </Col>
+        </Row>
       </Card>
 
-      {!selectedMeter ? (
-        <Card><Empty description="Chọn một đồng hồ AUTO để xem mặt đồng hồ realtime" /></Card>
+      {!selectedMeterId ? (
+        <Card><Empty description="Chọn một đồng hồ AUTO để xem realtime" /></Card>
       ) : (
         <Row gutter={[16, 16]}>
           <Col xs={24} lg={12}>
             <Card style={{ background: "#0d1117", borderColor: "#0d1117" }} styles={{ body: { padding: 20 } }}>
-              <MeterFace value={displayValue} online={!!liveData} label={(meter?.code || "") + " · " + (meter?.name || "")} />
+              <MeterFace value={displayValue} online={!!liveData} label={(meter?.code || "") + " - " + (meter?.name || "")} />
             </Card>
           </Col>
           <Col xs={24} lg={12}>
@@ -743,9 +953,9 @@ export function ElectricLiveClient() {
                   </Col>
                 </Row>
                 {liveData ? (
-                  <Text type="secondary">Đã đọc lúc {dayjs(liveData.timestamp).format("DD/MM/YYYY HH:mm:ss")} — dữ liệu chỉ dùng realtime/biểu đồ, không dùng trực tiếp để tính tiền điện.</Text>
+                  <Text type="secondary">Đã đọc lúc {dayjs(liveData.timestamp).format("DD/MM/YYYY HH:mm:ss")} - dữ liệu chỉ dùng realtime/biểu đồ, không dùng trực tiếp để tính tiền điện.</Text>
                 ) : (
-                  <Text type="secondary">Bấm &quot;Đọc realtime&quot; để lấy chỉ số mới nhất qua Gateway, hoặc xem lịch sử telemetry tự động bên dưới.</Text>
+                  <Text type="secondary">Bấm &quot;Đọc realtime&quot; để lấy chỉ số mới nhất qua Gateway. Mỗi lần chỉ đọc một đồng hồ để tránh quá tải Gateway.</Text>
                 )}
               </Card>
               <Card title="Xu hướng kWh gần đây" loading={historyLoading}>
@@ -753,9 +963,9 @@ export function ElectricLiveClient() {
               </Card>
               <Card size="small" title="Thông tin đồng hồ">
                 <Space direction="vertical" size={4}>
-                  <Text>Gateway: <b>{meter?.gatewayIp}:{meter?.gatewayPort}</b> — Slave ID <b>{meter?.modbusId}</b></Text>
-                  <Text>Nhà máy: {meter?.transformer?.factory?.name || "---"} — Trạm: {meter?.transformer?.name || "---"}</Text>
-                  <Text>TU/TI: {meter?.tu} / {meter?.ti}</Text>
+                  <Text>Gateway: <b>{meter?.gatewayIp}:{meter?.gatewayPort}</b> - Slave ID <b>{meter?.modbusId}</b></Text>
+                  <Text>Nhà máy: {meter?.transformer?.factory?.name || "---"} - Trạm: {meter?.transformer?.name || "---"}</Text>
+                  <Text>Nhóm: {meter?.group?.name || "---"} - TU/TI: {meter?.tu} / {meter?.ti}</Text>
                 </Space>
               </Card>
             </Space>
