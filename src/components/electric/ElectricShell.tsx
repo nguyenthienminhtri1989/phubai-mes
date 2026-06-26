@@ -5,16 +5,20 @@ import {
   DashboardOutlined,
   DatabaseOutlined,
   DollarOutlined,
+  DownOutlined,
   FormOutlined,
+  KeyOutlined,
   LogoutOutlined,
   TeamOutlined,
   ThunderboltOutlined,
 } from "@ant-design/icons";
-import { Avatar, Layout, Menu, Space, Tag, Typography } from "antd";
+import { Avatar, Dropdown, Layout, Menu, Space, Tag, Typography } from "antd";
 import type { MenuProps } from "antd";
 import { signOut, useSession } from "next-auth/react";
 import { usePathname, useRouter } from "next/navigation";
 import type { ReactNode } from "react";
+import { useState } from "react";
+import { ChangePasswordModal } from "./ChangePasswordModal";
 
 const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
@@ -37,6 +41,18 @@ export function ElectricShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const { data: session } = useSession();
   const role = (session?.user as { role?: string } | undefined)?.role;
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+
+  const userMenuItems: MenuProps["items"] = [
+    { key: "change-password", icon: <KeyOutlined />, label: "Đổi mật khẩu" },
+    { type: "divider" },
+    { key: "logout", icon: <LogoutOutlined />, label: "Đăng xuất", danger: true },
+  ];
+
+  const onUserMenuClick: MenuProps["onClick"] = ({ key }) => {
+    if (key === "change-password") setPasswordModalOpen(true);
+    if (key === "logout") void signOut({ callbackUrl: "/login" });
+  };
 
   const items: MenuProps["items"] = [
     {
@@ -118,9 +134,9 @@ export function ElectricShell({ children }: { children: ReactNode }) {
           }}
         >
           <Text strong style={{ fontSize: 16 }}>{pageTitle[pathname] || "Module điện năng"}</Text>
-          <Space size={20}>
-            {session?.user ? (
-              <Space size={10}>
+          {session?.user ? (
+            <Dropdown menu={{ items: userMenuItems, onClick: onUserMenuClick }} trigger={["click"]}>
+              <Space size={10} style={{ cursor: "pointer" }}>
                 <Avatar size={32} style={{ backgroundColor: "#faad14", color: "#1f2733", fontWeight: 700 }}>
                   {(session.user.name || "?").charAt(0).toUpperCase()}
                 </Avatar>
@@ -128,15 +144,14 @@ export function ElectricShell({ children }: { children: ReactNode }) {
                   <div style={{ fontWeight: 600 }}>{session.user.name}</div>
                   <Tag color={roleColor[role || "VIEWER"]} style={{ marginTop: 2 }}>{roleLabel[role || "VIEWER"]}</Tag>
                 </div>
+                <DownOutlined style={{ fontSize: 10, color: "#8c8c8c" }} />
               </Space>
-            ) : null}
-            <a onClick={() => signOut({ callbackUrl: "/login" })} style={{ cursor: "pointer", color: "#8c8c8c" }}>
-              <LogoutOutlined /> Đăng xuất
-            </a>
-          </Space>
+            </Dropdown>
+          ) : null}
         </Header>
         <Content style={{ background: "#f5f7fb", padding: 24 }}>{children}</Content>
       </Layout>
+      <ChangePasswordModal open={passwordModalOpen} onClose={() => setPasswordModalOpen(false)} />
     </Layout>
   );
 }
