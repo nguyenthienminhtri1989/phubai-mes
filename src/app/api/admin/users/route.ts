@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
       username,
       password: await bcrypt.hash(password, 10),
       fullName,
-      role: role as "ADMIN" | "EDITOR" | "VIEWER",
+      role: role as "ADMIN" | "MANAGER" | "EDITOR" | "VIEWER",
       isActive: body.isActive ?? true,
     },
     select: userSelect,

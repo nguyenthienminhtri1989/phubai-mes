@@ -1,5 +1,5 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/permissions";
+import { requireCatalogManager } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 
 export async function GET() {
@@ -11,7 +11,7 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const guard = await requireAdmin();
+  const guard = await requireCatalogManager();
   if (!guard.ok) return guard.response;
 
   const body = await request.json();
@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
-  const guard = await requireAdmin();
+  const guard = await requireCatalogManager();
   if (!guard.ok) return guard.response;
 
   const body = await request.json();
@@ -54,7 +54,7 @@ export async function PUT(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const guard = await requireAdmin();
+  const guard = await requireCatalogManager();
   if (!guard.ok) return guard.response;
 
   const body = await request.json();

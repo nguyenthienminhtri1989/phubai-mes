@@ -12,18 +12,19 @@ type AppUser = {
   id: string;
   username: string;
   fullName: string;
-  role: "ADMIN" | "EDITOR" | "VIEWER";
+  role: "ADMIN" | "MANAGER" | "EDITOR" | "VIEWER";
   isActive: boolean;
   createdAt: string;
 };
 
 const roleOptions = [
-  { label: "ADMIN — toàn quyền", value: "ADMIN" },
+  { label: "ADMIN — toàn quyền, quản lý user", value: "ADMIN" },
+  { label: "MANAGER — quản lý danh mục + giá điện", value: "MANAGER" },
   { label: "EDITOR — xem + nhập chỉ số", value: "EDITOR" },
   { label: "VIEWER — chỉ xem", value: "VIEWER" },
 ];
 
-const roleColor: Record<string, string> = { ADMIN: "red", EDITOR: "blue", VIEWER: "default" };
+const roleColor: Record<string, string> = { ADMIN: "red", MANAGER: "purple", EDITOR: "blue", VIEWER: "default" };
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
@@ -144,7 +145,7 @@ export function UsersClient() {
     <>
       <div style={{ marginBottom: 16 }}>
         <Title level={3} style={{ margin: 0 }}>Quản lý người dùng</Title>
-        <Text type="secondary">Tạo và phân quyền tài khoản truy cập PHUBAI-MES (ADMIN / EDITOR / VIEWER).</Text>
+        <Text type="secondary">Tạo và phân quyền tài khoản truy cập PHUBAI-MES (ADMIN / MANAGER / EDITOR / VIEWER).</Text>
       </div>
       <Card extra={<Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>Thêm user</Button>}>
         <Table rowKey="id" loading={loading} dataSource={users} columns={columns} />

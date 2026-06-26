@@ -50,7 +50,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     where: { id },
     data: {
       fullName: body.fullName ? String(body.fullName).trim() : undefined,
-      role: nextRole as "ADMIN" | "EDITOR" | "VIEWER",
+      role: nextRole as "ADMIN" | "MANAGER" | "EDITOR" | "VIEWER",
       isActive: nextIsActive,
       password: password ? await bcrypt.hash(password, 10) : undefined,
     },

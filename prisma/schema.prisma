@@ -19,6 +19,7 @@ enum PowerDataSource {
 
 enum UserRole {
   ADMIN // Toàn quyền: xem/sửa/xóa mọi thứ, quản lý user
+  MANAGER // Trưởng phòng điện: quản lý danh mục (nhà máy/trạm/đồng hồ/nhóm/loại điện) + giá điện, không quản lý user
   EDITOR // Xem mọi thứ + nhập/sửa chỉ số hàng ngày, không sửa danh mục/giá điện, không xóa
   VIEWER // Chỉ xem
 }
