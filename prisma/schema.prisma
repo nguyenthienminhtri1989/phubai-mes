@@ -123,6 +123,37 @@ model ElectricityPrice {
   updatedAt     DateTime @updatedAt
 }
 
+// Phien ban bieu khung gio EVN (VD: CURRENT_2014 dang dung, NEW_2026 da khai bao san nhung chua kich hoat).
+// Chi 1 version isActive=true tai 1 thoi diem - dung de tach tieu thu Ha the AUTO theo Binh thuong/Cao diem/Thap diem.
+model TariffScheduleVersion {
+  id            String            @id @default(cuid())
+  code          String            @unique // CURRENT_2014, NEW_2026, ...
+  name          String
+  isActive      Boolean           @default(false)
+  effectiveFrom DateTime?
+  note          String?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  ranges        TariffTimeRange[]
+
+  @@index([isActive])
+}
+
+// 1 khoang gio trong ngay thuoc 1 loai gia (NORMAL/PEAK/OFF_PEAK), khong wrap qua nua dem
+// (khoang 22:00-04:00 sang duoc khai bao thanh 2 dong: 22:00-24:00 va 00:00-04:00).
+model TariffTimeRange {
+  id          String                @id @default(cuid())
+  versionId   String
+  dayType     String // WEEKDAY (Thu 2 - Thu 7), SUNDAY
+  priceType   String // NORMAL, PEAK, OFF_PEAK
+  startMinute Int // tinh tu 00:00, 0-1439
+  endMinute   Int // 1-1440, luon > startMinute
+  version     TariffScheduleVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@index([versionId])
+  @@index([versionId, dayType])
+}
+
 model EnergyTypeCategory {
   id        String   @id @default(cuid())
   code      String   @unique

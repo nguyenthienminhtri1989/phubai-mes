@@ -144,6 +144,23 @@ type PowerRecord = {
   meter?: ElectricMeter;
 };
 
+type TariffTimeRange = {
+  id: string;
+  dayType: "WEEKDAY" | "SUNDAY";
+  priceType: "NORMAL" | "PEAK" | "OFF_PEAK";
+  startMinute: number;
+  endMinute: number;
+};
+
+type TariffScheduleVersion = {
+  id: string;
+  code: string;
+  name: string;
+  isActive: boolean;
+  note?: string | null;
+  ranges: TariffTimeRange[];
+};
+
 type Telemetry = {
   id: string;
   meterId: string;
@@ -976,6 +993,91 @@ export function ElectricLiveClient() {
   );
 }
 
+function minuteToHHMM(minute: number) {
+  const h = Math.floor(minute / 60);
+  const m = minute % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+const tariffPriceTypeName: Record<string, string> = { NORMAL: "Bình thường", PEAK: "Cao điểm", OFF_PEAK: "Thấp điểm" };
+const tariffPriceTypeColor: Record<string, string> = { NORMAL: "blue", PEAK: "red", OFF_PEAK: "green" };
+const tariffDayTypeName: Record<string, string> = { WEEKDAY: "Thứ 2 - Thứ 7", SUNDAY: "Chủ Nhật" };
+
+function TariffScheduleCard() {
+  const { canManageCatalog } = useRole();
+  const [versions, setVersions] = useState<TariffScheduleVersion[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      setVersions(await fetchJson<TariffScheduleVersion[]>("/api/electric/tariff-schedule"));
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "Không tải được biểu khung giờ");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
+
+  const activate = async (id: string) => {
+    try {
+      await fetchJson(`/api/electric/tariff-schedule/${id}/activate`, postBody("POST", {}));
+      message.success("Đã kích hoạt phiên bản khung giờ này");
+      await load();
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "Không kích hoạt được");
+    }
+  };
+
+  return (
+    <Card title="Biểu khung giờ áp dụng tính tiền điện" style={{ marginTop: 16 }} loading={loading}>
+      <Text type="secondary" style={{ display: "block", marginBottom: 16 }}>
+        Dùng để tự động tách tiêu thụ của đồng hồ Hạ thế đọc AUTO (theo giờ) thành 3 khung giá Bình thường/Cao điểm/Thấp điểm,
+        dựa trên dữ liệu telemetry hàng giờ. Đồng hồ Trung thế không phụ thuộc bảng này vì phần cứng đã tự tách sẵn 3 chỉ số.
+      </Text>
+      {versions.map((version) => (
+        <Card
+          key={version.id}
+          type="inner"
+          style={{ marginBottom: 12 }}
+          title={
+            <Space>
+              {version.name}
+              <Tag color={version.isActive ? "green" : "default"}>{version.isActive ? "Đang áp dụng" : "Chưa áp dụng"}</Tag>
+            </Space>
+          }
+          extra={
+            !version.isActive && canManageCatalog ? (
+              <Popconfirm title="Kích hoạt phiên bản khung giờ này để tính tiền điện?" onConfirm={() => activate(version.id)}>
+                <Button size="small">Kích hoạt</Button>
+              </Popconfirm>
+            ) : null
+          }
+        >
+          {version.note ? <Text type="secondary" style={{ display: "block", marginBottom: 8 }}>{version.note}</Text> : null}
+          {(["WEEKDAY", "SUNDAY"] as const).map((dayType) => (
+            <div key={dayType} style={{ marginBottom: 8 }}>
+              <Text strong>{tariffDayTypeName[dayType]}: </Text>
+              <Space wrap style={{ marginTop: 4 }}>
+                {version.ranges
+                  .filter((r) => r.dayType === dayType)
+                  .sort((a, b) => a.startMinute - b.startMinute)
+                  .map((r) => (
+                    <Tag key={r.id} color={tariffPriceTypeColor[r.priceType]}>
+                      {minuteToHHMM(r.startMinute)} - {minuteToHHMM(r.endMinute)} ({tariffPriceTypeName[r.priceType]})
+                    </Tag>
+                  ))}
+              </Space>
+            </div>
+          ))}
+        </Card>
+      ))}
+    </Card>
+  );
+}
+
 export function ElectricPricesClient() {
   const { canManageCatalog } = useRole();
   const [prices, setPrices] = useState<ElectricityPrice[]>([]); const [editing, setEditing] = useState<ElectricityPrice | null>(null); const [modalOpen, setModalOpen] = useState(false); const [loading, setLoading] = useState(false); const [form] = Form.useForm();
@@ -989,7 +1091,7 @@ export function ElectricPricesClient() {
   const priceTypeName: Record<string, string> = { NORMAL: "Bình thường", PEAK: "Cao điểm", OFF_PEAK: "Thấp điểm" };
   const openPrice = (record?: ElectricityPrice) => { setEditing(record || null); form.resetFields(); form.setFieldsValue(record ? { ...record, effectiveFrom: dayjs(record.effectiveFrom) } : { type: "NORMAL", name: priceTypeName.NORMAL, effectiveFrom: dayjs() }); setModalOpen(true); };
   const savePrice = async (values: { type: string; name: string; price: number; description?: string; effectiveFrom?: Dayjs; note?: string }) => { await fetchJson("/api/electric/prices", postBody(editing ? "PUT" : "POST", { ...values, effectiveFrom: values.effectiveFrom?.toISOString() })); message.success("Đã lưu đơn giá điện"); setModalOpen(false); await load(); };
-  return <><PageTitle title="Đơn giá điện" subtitle="Quản lý 3 khung giá Bình thường/Cao điểm/Thấp điểm dùng khi chốt PowerRecord." /><Card extra={canManageCatalog && <Button type="primary" icon={<PlusOutlined />} onClick={() => openPrice()}>Thêm/Cập nhật giá</Button>}><Table rowKey="id" loading={loading} dataSource={prices} columns={[{ title: "Loại giá", dataIndex: "type", render: (value: string) => <Tag color={value === "NORMAL" ? "blue" : value === "PEAK" ? "red" : "green"}>{value}</Tag> }, { title: "Tên hiển thị", dataIndex: "name" }, { title: "Đơn giá", dataIndex: "price", align: "right", render: (value: number) => <b>{fmtMoney.format(value)} VNĐ/kWh</b> }, { title: "Khung giờ / Mô tả", dataIndex: "description" }, { title: "Hiệu lực", dataIndex: "effectiveFrom", render: (value: string) => dayjs(value).format("DD/MM/YYYY") }, { title: "Ghi chú", dataIndex: "note" }, { title: "Thao tác", render: (_: unknown, record: ElectricityPrice) => canManageCatalog ? <Button icon={<EditOutlined />} onClick={() => openPrice(record)}>Cập nhật</Button> : null }]} /></Card><Modal title={editing ? "Cập nhật đơn giá" : "Thêm đơn giá"} open={modalOpen} onCancel={() => setModalOpen(false)} onOk={() => form.submit()}><Form form={form} layout="vertical" onFinish={savePrice}><Form.Item name="type" label="Loại giá" rules={[{ required: true }]}><Select disabled={!!editing} options={priceTypeOptions} onChange={(value) => form.setFieldsValue({ name: priceTypeName[value] })} /></Form.Item><Form.Item name="name" label="Tên hiển thị" rules={[{ required: true }]}><Input /></Form.Item><Form.Item name="price" label="Đơn giá VNĐ/kWh" rules={[{ required: true }]}><InputNumber min={0} style={{ width: "100%" }} /></Form.Item><Form.Item name="description" label="Khung giờ / Mô tả"><Input placeholder="Vd: 04:00-09:30, 11:30-17:00, 20:00-22:00" /></Form.Item><Form.Item name="effectiveFrom" label="Ngày hiệu lực"><DatePicker style={{ width: "100%" }} /></Form.Item><Form.Item name="note" label="Ghi chú"><Input.TextArea rows={2} /></Form.Item></Form></Modal></>;
+  return <><PageTitle title="Đơn giá điện" subtitle="Quản lý 3 khung giá Bình thường/Cao điểm/Thấp điểm dùng khi chốt PowerRecord." /><Card extra={canManageCatalog && <Button type="primary" icon={<PlusOutlined />} onClick={() => openPrice()}>Thêm/Cập nhật giá</Button>}><Table rowKey="id" loading={loading} dataSource={prices} columns={[{ title: "Loại giá", dataIndex: "type", render: (value: string) => <Tag color={value === "NORMAL" ? "blue" : value === "PEAK" ? "red" : "green"}>{value}</Tag> }, { title: "Tên hiển thị", dataIndex: "name" }, { title: "Đơn giá", dataIndex: "price", align: "right", render: (value: number) => <b>{fmtMoney.format(value)} VNĐ/kWh</b> }, { title: "Khung giờ / Mô tả", dataIndex: "description" }, { title: "Hiệu lực", dataIndex: "effectiveFrom", render: (value: string) => dayjs(value).format("DD/MM/YYYY") }, { title: "Ghi chú", dataIndex: "note" }, { title: "Thao tác", render: (_: unknown, record: ElectricityPrice) => canManageCatalog ? <Button icon={<EditOutlined />} onClick={() => openPrice(record)}>Cập nhật</Button> : null }]} /></Card><TariffScheduleCard /><Modal title={editing ? "Cập nhật đơn giá" : "Thêm đơn giá"} open={modalOpen} onCancel={() => setModalOpen(false)} onOk={() => form.submit()}><Form form={form} layout="vertical" onFinish={savePrice}><Form.Item name="type" label="Loại giá" rules={[{ required: true }]}><Select disabled={!!editing} options={priceTypeOptions} onChange={(value) => form.setFieldsValue({ name: priceTypeName[value] })} /></Form.Item><Form.Item name="name" label="Tên hiển thị" rules={[{ required: true }]}><Input /></Form.Item><Form.Item name="price" label="Đơn giá VNĐ/kWh" rules={[{ required: true }]}><InputNumber min={0} style={{ width: "100%" }} /></Form.Item><Form.Item name="description" label="Khung giờ / Mô tả"><Input placeholder="Vd: 04:00-09:30, 11:30-17:00, 20:00-22:00" /></Form.Item><Form.Item name="effectiveFrom" label="Ngày hiệu lực"><DatePicker style={{ width: "100%" }} /></Form.Item><Form.Item name="note" label="Ghi chú"><Input.TextArea rows={2} /></Form.Item></Form></Modal></>;
 }
 
 export function ElectricReportsClient() {
@@ -1063,7 +1165,7 @@ export function ElectricReportsClient() {
           </Card>
         </Col>
         <Col xs={24} lg={12}>
-          <Card title="Tỷ trọng theo khung giờ (Trung thế)" loading={loading}>
+          <Card title="Tỷ trọng theo khung giờ Bình thường/Cao điểm/Thấp điểm" loading={loading}>
             <DonutChart
               data={[
                 { label: "Bình thường", value: report?.summary.totalNormal || 0, color: "#1677ff" },

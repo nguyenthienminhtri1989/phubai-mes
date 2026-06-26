@@ -371,8 +371,8 @@ export function AdminLayout({ children }: AdminLayoutProps) {
                 whiteSpace: "nowrap",
               }}
             >
-              PHUBAI
-              <span style={{ color: COLORS.accent }}> POWER</span>
+              <span style={{ color: COLORS.danger }}>POWER </span>
+              <span style={{ color: COLORS.accent }}> VIEW</span>
             </div>
             <div
               style={{
@@ -434,6 +434,72 @@ export function AdminLayout({ children }: AdminLayoutProps) {
         </ConfigProvider>
       </div>
 
+      {/* Copyright footer */}
+      {!collapsed ? (
+        <div
+          style={{
+            margin: "0 12px 10px",
+            padding: "10px 12px",
+            borderRadius: 8,
+            background: "rgba(0,208,255,0.04)",
+            border: `1px solid ${COLORS.siderBorder}`,
+            textAlign: "center",
+          }}
+        >
+          <div
+            style={{
+              fontSize: 10,
+              color: COLORS.textMuted,
+              letterSpacing: 0.5,
+              lineHeight: 1.5,
+            }}
+          >
+            © {new Date().getFullYear()} Bản quyền thuộc về
+          </div>
+          <div
+            style={{
+              fontSize: 12,
+              fontWeight: 700,
+              color: COLORS.accent,
+              letterSpacing: 1,
+              textShadow: `0 0 8px ${COLORS.accentGlow}`,
+            }}
+          >
+            Mr. Tri
+          </div>
+          <div
+            style={{
+              fontSize: 10,
+              color: COLORS.textDim,
+              marginTop: 1,
+            }}
+          >
+            PHUBAI POWER VIEW
+          </div>
+        </div>
+      ) : (
+        <div
+          style={{
+            margin: "0 auto 10px",
+            width: 36,
+            height: 36,
+            borderRadius: 8,
+            background: "rgba(0,208,255,0.04)",
+            border: `1px solid ${COLORS.siderBorder}`,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 13,
+            fontWeight: 800,
+            color: COLORS.accent,
+            letterSpacing: 0,
+          }}
+          title="© Mr. Tri – PHUBAI POWER VIEW"
+        >
+          ©
+        </div>
+      )}
+
       {/* Collapse toggle */}
       <button
         onClick={() => setCollapsed(!collapsed)}
@@ -443,7 +509,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
           justifyContent: "center",
           gap: 8,
           height: 44,
-          margin: "8px 12px 12px",
+          margin: "0 12px 12px",
           borderRadius: 10,
           background: COLORS.accentDim,
           border: `1px solid ${COLORS.siderBorder}`,

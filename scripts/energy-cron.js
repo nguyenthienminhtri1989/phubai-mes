@@ -31,6 +31,85 @@ function yesterdayAtVietnamMidnight() {
   return new Date(`${yesterday.toISOString().slice(0, 10)}T12:00:00.000+07:00`);
 }
 
+// Cung 1 "ngay" voi recordDate (anchor noon +07:00) nhung tra ve thoi diem 08:00 VN cua ngay do,
+// dung de xac dinh dung cua so chot so 24h (08:00 hom truoc -> 08:00 hom nay).
+function vnDateAtHour(noonAnchor, hour) {
+  const dateStr = noonAnchor.toISOString().slice(0, 10);
+  return new Date(`${dateStr}T${String(hour).padStart(2, "0")}:00:00.000+07:00`);
+}
+
+const vnFormatter = new Intl.DateTimeFormat("en-US", {
+  timeZone: "Asia/Ho_Chi_Minh",
+  hourCycle: "h23",
+  hour: "2-digit",
+  minute: "2-digit",
+  weekday: "short",
+});
+
+function vnDayPosition(date) {
+  const parts = vnFormatter.formatToParts(date);
+  const map = {};
+  for (const part of parts) map[part.type] = part.value;
+  return {
+    minuteOfDay: Number(map.hour) * 60 + Number(map.minute),
+    dayType: map.weekday === "Sun" ? "SUNDAY" : "WEEKDAY",
+  };
+}
+
+function overlapMinutesByBand(ranges, dayType, startMinute, endMinute) {
+  const result = { NORMAL: 0, PEAK: 0, OFF_PEAK: 0 };
+  for (const range of ranges) {
+    if (range.dayType !== dayType) continue;
+    const overlapStart = Math.max(startMinute, range.startMinute);
+    const overlapEnd = Math.min(endMinute, range.endMinute);
+    if (overlapEnd > overlapStart) result[range.priceType] += overlapEnd - overlapStart;
+  }
+  return result;
+}
+
+async function getActiveTariffRanges() {
+  const version = await pool.query('select "id" from "TariffScheduleVersion" where "isActive" = true limit 1');
+  if (version.rowCount === 0) return [];
+  const ranges = await pool.query(
+    'select "dayType", "priceType", "startMinute", "endMinute" from "TariffTimeRange" where "versionId" = $1',
+    [version.rows[0].id],
+  );
+  return ranges.rows;
+}
+
+/**
+ * Tach tong san luong tieu thu giua cac lan doc telemetry lien tiep (cach nhau ~1 gio) thanh
+ * 3 khung gia, theo ty le phut giao nhau voi bieu khung gio dang active. Tra ve null neu khong
+ * du du lieu (chua co bieu khung gio active, hoac it hon 2 lan doc trong cua so chot so).
+ */
+function splitTelemetryByTariff(ranges, readings) {
+  if (ranges.length === 0 || readings.length < 2) return null;
+
+  const result = { NORMAL: 0, PEAK: 0, OFF_PEAK: 0 };
+  for (let i = 1; i < readings.length; i++) {
+    const prev = readings[i - 1];
+    const curr = readings[i];
+    const delta = Number(curr.totalEnergy) - Number(prev.totalEnergy);
+    if (delta <= 0) continue; // bo qua khoang co reset/giam
+
+    const prevTs = new Date(prev.timestamp);
+    const currTs = new Date(curr.timestamp);
+    const { minuteOfDay: startMinute, dayType } = vnDayPosition(prevTs);
+    const durationMinutes = Math.round((currTs.getTime() - prevTs.getTime()) / 60000);
+    if (durationMinutes <= 0) continue;
+    const endMinute = startMinute + durationMinutes;
+
+    const overlap = overlapMinutesByBand(ranges, dayType, startMinute, endMinute);
+    const totalMinutes = overlap.NORMAL + overlap.PEAK + overlap.OFF_PEAK;
+    if (totalMinutes <= 0) continue;
+
+    result.NORMAL += (delta * overlap.NORMAL) / totalMinutes;
+    result.PEAK += (delta * overlap.PEAK) / totalMinutes;
+    result.OFF_PEAK += (delta * overlap.OFF_PEAK) / totalMinutes;
+  }
+  return result;
+}
+
 function parseSelecFloat(buffer, offset = 0) {
   const fixedBuffer = Buffer.alloc(4);
   fixedBuffer[0] = buffer[offset + 2];
@@ -45,7 +124,7 @@ async function getAutoMeters(requireConnection = false) {
     ? 'and "modbusId" is not null and "gatewayIp" is not null'
     : "";
   const result = await pool.query(
-    `select "id", "code", "name", "isActive", "isAuto", "modbusId", "gatewayIp", "gatewayPort", "registerAddr", "tu", "ti"
+    `select "id", "code", "name", "isActive", "isAuto", "type", "modbusId", "gatewayIp", "gatewayPort", "registerAddr", "tu", "ti"
      from "PowerMeter"
      where "isActive" = true and "isAuto" = true ${connectionFilter}
      order by "gatewayIp" asc nulls last, "modbusId" asc nulls last, "code" asc`,
@@ -127,9 +206,16 @@ async function closeDailyRecords() {
 [${nowVN()}] Bat dau chot so dien nang luc 08:00...`);
 
   const recordDate = yesterdayAtVietnamMidnight();
+  const windowStart = vnDateAtHour(recordDate, 8);
+  const windowEnd = vnDateAtHour(recordDate, 8);
+  windowEnd.setDate(windowEnd.getDate() + 1); // 08:00 hom nay (ket thuc cua so chot so 24h)
+
   const autoMeters = await getAutoMeters(false);
-  const priceResult = await pool.query('select "price" from "ElectricityPrice" where "type" = $1 limit 1', ["NORMAL"]);
-  const unitPrice = Number(priceResult.rows[0]?.price ?? 0);
+  const priceRows = await pool.query('select "type", "price" from "ElectricityPrice"');
+  const priceByType = {};
+  for (const row of priceRows.rows) priceByType[row.type] = Number(row.price ?? 0);
+  const unitPrice = priceByType.NORMAL ?? 0;
+  const tariffRanges = await getActiveTariffRanges();
   let closed = 0;
 
   for (const meter of autoMeters) {
@@ -158,13 +244,44 @@ async function closeDailyRecords() {
     const currTotal = Number(latestTelemetry.rows[0].totalEnergy ?? 0);
     const isReset = currTotal < prevTotal;
     const delta = isReset ? currTotal : Math.max(0, currTotal - prevTotal);
-    const consTotal = delta * Number(meter.tu ?? 1) * Number(meter.ti ?? 1);
-    const costTotal = consTotal * unitPrice;
+    const tu = Number(meter.tu ?? 1);
+    const ti = Number(meter.ti ?? 1);
+    const consTotal = delta * tu * ti;
+
+    // Dong ho Ha the (type=1) doc AUTO theo gio: tach tieu thu theo 3 khung gia tu hourly telemetry
+    // trong cua so chot so 08:00 hom truoc -> 08:00 hom nay, dua tren bieu khung gio dang active.
+    let consNormal = null;
+    let consPeak = null;
+    let consOffPeak = null;
+    let costTotal = consTotal * unitPrice;
+
+    if (meter.type !== 2 && !isReset) {
+      const windowReadings = await pool.query(
+        `select "totalEnergy", "timestamp" from "PowerTelemetry"
+         where "meterId" = $1 and "timestamp" >= $2 and "timestamp" <= $3
+         order by "timestamp" asc`,
+        [meter.id, windowStart, windowEnd],
+      );
+      const split = splitTelemetryByTariff(
+        tariffRanges,
+        windowReadings.rows.map((r) => ({ totalEnergy: Number(r.totalEnergy), timestamp: new Date(r.timestamp) })),
+      );
+      if (split) {
+        consNormal = split.NORMAL * tu * ti;
+        consPeak = split.PEAK * tu * ti;
+        consOffPeak = split.OFF_PEAK * tu * ti;
+        costTotal =
+          consNormal * (priceByType.NORMAL ?? 0) +
+          consPeak * (priceByType.PEAK ?? 0) +
+          consOffPeak * (priceByType.OFF_PEAK ?? 0);
+      }
+    }
 
     await pool.query(
       `insert into "PowerRecord" (
-         "id", "recordDate", "meterId", "dataSource", "prevTotal", "currTotal", "unitPrice", "isReset", "consTotal", "costTotal", "createdAt", "updatedAt"
-       ) values ($1, $2, $3, 'AUTO', $4, $5, $6, $7, $8, $9, now(), now())
+         "id", "recordDate", "meterId", "dataSource", "prevTotal", "currTotal", "unitPrice", "isReset",
+         "consTotal", "consNormal", "consPeak", "consOffPeak", "costTotal", "createdAt", "updatedAt"
+       ) values ($1, $2, $3, 'AUTO', $4, $5, $6, $7, $8, $9, $10, $11, $12, now(), now())
        on conflict ("recordDate", "meterId") do update set
          "dataSource" = 'AUTO',
          "prevTotal" = excluded."prevTotal",
@@ -172,13 +289,17 @@ async function closeDailyRecords() {
          "unitPrice" = excluded."unitPrice",
          "isReset" = excluded."isReset",
          "consTotal" = excluded."consTotal",
+         "consNormal" = excluded."consNormal",
+         "consPeak" = excluded."consPeak",
+         "consOffPeak" = excluded."consOffPeak",
          "costTotal" = excluded."costTotal",
          "updatedAt" = now()`,
-      [newId("record"), recordDate, meter.id, prevTotal, currTotal, unitPrice, isReset, consTotal, costTotal],
+      [newId("record"), recordDate, meter.id, prevTotal, currTotal, unitPrice, isReset, consTotal, consNormal, consPeak, consOffPeak, costTotal],
     );
 
     closed += 1;
-    console.log(`[Chot so] ${meter.code}: ${consTotal.toFixed(2)} kWh, ${costTotal.toLocaleString("vi-VN")} VND`);
+    const splitInfo = consNormal != null ? ` (BT ${consNormal.toFixed(1)} / CD ${consPeak.toFixed(1)} / TD ${consOffPeak.toFixed(1)})` : " (chua tach duoc khung gio)";
+    console.log(`[Chot so] ${meter.code}: ${consTotal.toFixed(2)} kWh${splitInfo}, ${costTotal.toLocaleString("vi-VN")} VND`);
   }
 
   const sixMonthsAgo = new Date();
