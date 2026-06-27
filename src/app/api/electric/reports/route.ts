@@ -1,10 +1,15 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import { toRecordDate } from "@/lib/energy-record";
 import { prisma } from "@/lib/prisma";
 
 function dateKey(date: Date, groupBy: string) {
   const iso = date.toISOString().slice(0, 10);
   return groupBy === "month" ? iso.slice(0, 7) : iso;
+}
+
+function toUnitId(value: string | null) {
+  const id = Number(value || 0);
+  return id || null;
 }
 
 export async function GET(request: NextRequest) {
@@ -14,7 +19,15 @@ export async function GET(request: NextRequest) {
   const groupBy = searchParams.get("groupBy") === "month" ? "month" : "day";
   const factoryId = searchParams.get("factoryId");
   const transformerId = searchParams.get("substationId") || searchParams.get("transformerId");
+  const transformerUnitId = toUnitId(searchParams.get("transformerUnitId"));
   const meterGroupId = searchParams.get("meterGroupId") || searchParams.get("groupId");
+
+  const meterWhere = {
+    transformerUnitId: transformerUnitId || undefined,
+    transformerId: transformerId || undefined,
+    groupId: meterGroupId || undefined,
+    transformer: factoryId ? { factoryId } : undefined,
+  };
 
   const rows = await prisma.powerRecord.findMany({
     where: {
@@ -25,11 +38,7 @@ export async function GET(request: NextRequest) {
               lte: endDate ? toRecordDate(endDate) : undefined,
             }
           : undefined,
-      meter: {
-        transformerId: transformerId || undefined,
-        groupId: meterGroupId || undefined,
-        transformer: factoryId ? { factoryId } : undefined,
-      },
+      meter: meterWhere,
     },
     include: {
       meter: {
@@ -40,6 +49,7 @@ export async function GET(request: NextRequest) {
               factory: true,
             },
           },
+          transformerUnit: true,
         },
       },
     },
@@ -55,6 +65,7 @@ export async function GET(request: NextRequest) {
     factoryName: string;
     groupName: string;
     substationName: string;
+    transformerUnitName: string;
     consTotal: number;
     costTotal: number;
   }>();
@@ -74,9 +85,10 @@ export async function GET(request: NextRequest) {
       meterCode: row.meter.code,
       meterName: row.meter.name,
       factoryId: factory?.id || null,
-      factoryName: factory?.name || "Chưa gán nhà máy",
-      groupName: row.meter.group?.name || "Chưa phân nhóm",
-      substationName: row.meter.transformer?.name || "Chưa gán trạm",
+      factoryName: factory?.name || "Chua gan nha may",
+      groupName: row.meter.group?.name || "Chua phan nhom",
+      substationName: row.meter.transformer?.name || "Chua gan tram",
+      transformerUnitName: row.meter.transformerUnit?.name || "Chua gan may bien ap",
       consTotal: 0,
       costTotal: 0,
     };
@@ -88,7 +100,7 @@ export async function GET(request: NextRequest) {
     const groupBucket = byGroupMap.get(groupKey) || {
       groupId: row.meter.groupId,
       groupCode: row.meter.group?.code || "NONE",
-      groupName: row.meter.group?.name || "Chưa phân nhóm",
+      groupName: row.meter.group?.name || "Chua phan nhom",
       consTotal: 0,
       costTotal: 0,
     };
@@ -100,7 +112,7 @@ export async function GET(request: NextRequest) {
     const factoryBucket = byFactoryMap.get(factoryKey) || {
       factoryId: factory?.id || null,
       factoryCode: factory?.code || "NONE",
-      factoryName: factory?.name || "Chưa gán nhà máy",
+      factoryName: factory?.name || "Chua gan nha may",
       consTotal: 0,
       costTotal: 0,
     };
@@ -116,7 +128,6 @@ export async function GET(request: NextRequest) {
   const totalOffPeak = rows.reduce((sum, row) => sum + (row.consOffPeak ?? 0), 0);
   const daysWithData = byDateMap.size;
 
-  // So sánh với kỳ trước liền kề (cùng độ dài ngày) để tính % tăng/giảm
   let prevPeriodConsumption = 0;
   let trendPercent: number | null = null;
   if (startDate && endDate) {
@@ -129,11 +140,7 @@ export async function GET(request: NextRequest) {
     const prevRows = await prisma.powerRecord.findMany({
       where: {
         recordDate: { gte: prevStart, lte: prevEnd },
-        meter: {
-          transformerId: transformerId || undefined,
-          groupId: meterGroupId || undefined,
-          transformer: factoryId ? { factoryId } : undefined,
-        },
+        meter: meterWhere,
       },
       select: { consTotal: true },
     });

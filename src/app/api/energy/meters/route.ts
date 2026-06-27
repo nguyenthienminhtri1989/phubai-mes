@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import { requireCatalogManager } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 
@@ -9,15 +9,64 @@ const meterInclude = {
       factory: true,
     },
   },
+  transformerUnit: {
+    include: {
+      transformer: {
+        include: {
+          factory: true,
+        },
+      },
+    },
+  },
 };
+
+function toUnitId(value: unknown) {
+  const id = Number(value || 0);
+  return id || null;
+}
+
+function toNullableString(value: unknown) {
+  const text = String(value || "").trim();
+  return text || null;
+}
+
+async function meterData(body: Record<string, unknown>) {
+  const transformerUnitId = toUnitId(body.transformerUnitId);
+  const unit = transformerUnitId
+    ? await prisma.powerTransformerUnit.findUnique({ where: { id: transformerUnitId } })
+    : null;
+
+  const isAuto = body.isAuto === true;
+
+  return {
+    code: String(body.code || "").trim(),
+    name: String(body.name || "").trim(),
+    meterNo: toNullableString(body.meterNo),
+    transformerId: unit?.transformerId || toNullableString(body.transformerId),
+    transformerUnitId,
+    groupId: toNullableString(body.groupId),
+    isActive: body.isActive !== false,
+    type: Number(body.type || 1),
+    isAuto,
+    modbusId: isAuto && body.modbusId ? Number(body.modbusId) : null,
+    gatewayIp: isAuto && body.gatewayIp ? String(body.gatewayIp).trim() : null,
+    gatewayPort: Number(body.gatewayPort || 502),
+    registerAddr: Number(body.registerAddr || 0),
+    tu: Number(body.tu || 1),
+    ti: Number(body.ti || 1),
+    note: toNullableString(body.note),
+  };
+}
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const factoryId = searchParams.get("factoryId");
   const transformerId = searchParams.get("transformerId") || searchParams.get("substationId");
+  const transformerUnitId = toUnitId(searchParams.get("transformerUnitId"));
 
   const data = await prisma.powerMeter.findMany({
     where: {
+      transformerUnitId: transformerUnitId || undefined,
       transformerId: transformerId || undefined,
       transformer: factoryId ? { factoryId } : undefined,
     },
@@ -34,23 +83,7 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json();
   const data = await prisma.powerMeter.create({
-    data: {
-      code: String(body.code || "").trim(),
-      name: String(body.name || "").trim(),
-      meterNo: body.meterNo || null,
-      transformerId: body.transformerId || null,
-      groupId: body.groupId || null,
-      isActive: body.isActive ?? true,
-      type: Number(body.type || 1),
-      isAuto: body.isAuto ?? false,
-      modbusId: body.isAuto && body.modbusId ? Number(body.modbusId) : null,
-      gatewayIp: body.isAuto && body.gatewayIp ? String(body.gatewayIp).trim() : null,
-      gatewayPort: Number(body.gatewayPort || 502),
-      registerAddr: Number(body.registerAddr || 0),
-      tu: Number(body.tu || 1),
-      ti: Number(body.ti || 1),
-      note: body.note || null,
-    },
+    data: await meterData(body),
     include: meterInclude,
   });
 
@@ -70,23 +103,7 @@ export async function PUT(request: NextRequest) {
 
   const data = await prisma.powerMeter.update({
     where: { id },
-    data: {
-      code: String(body.code || "").trim(),
-      name: String(body.name || "").trim(),
-      meterNo: body.meterNo || null,
-      transformerId: body.transformerId || null,
-      groupId: body.groupId || null,
-      isActive: body.isActive ?? true,
-      type: Number(body.type || 1),
-      isAuto: body.isAuto ?? false,
-      modbusId: body.isAuto && body.modbusId ? Number(body.modbusId) : null,
-      gatewayIp: body.isAuto && body.gatewayIp ? String(body.gatewayIp).trim() : null,
-      gatewayPort: Number(body.gatewayPort || 502),
-      registerAddr: Number(body.registerAddr || 0),
-      tu: Number(body.tu || 1),
-      ti: Number(body.ti || 1),
-      note: body.note || null,
-    },
+    data: await meterData(body),
     include: meterInclude,
   });
 

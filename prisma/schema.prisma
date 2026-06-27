@@ -63,8 +63,31 @@ model PowerTransformer {
   updatedAt   DateTime     @updatedAt
   factory     Factory?     @relation(fields: [factoryId], references: [id], onDelete: SetNull)
   meters      PowerMeter[]
+  units       PowerTransformerUnit[]
 
   @@index([factoryId])
+  @@index([isActive])
+}
+
+model PowerTransformerUnit {
+  id                Int               @id @default(autoincrement())
+  code              String            @unique
+  name              String
+  transformerId     String?
+  manufacturer      String?
+  manufacturingYear Int?
+  serialNumber      String?
+  ratedCapacity     Float?
+  ratedCapacityUnit String?           @default("kVA")
+  voltageLevel      String?
+  ratedCurrent      String?
+  isActive          Boolean           @default(true)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  transformer       PowerTransformer? @relation(fields: [transformerId], references: [id], onDelete: SetNull)
+  meters            PowerMeter[]
+
+  @@index([transformerId])
   @@index([isActive])
 }
 
@@ -87,8 +110,9 @@ model PowerMeter {
   code          String            @unique
   name          String
   meterNo       String?
-  transformerId String?
-  groupId       String?
+  transformerId     String?
+  transformerUnitId Int?
+  groupId           String?
   isActive      Boolean           @default(true)
   type          Int               @default(1) // 1: Hạ thế (1 chỉ số), 2: Trung thế (3 chỉ số Bình thường/Cao điểm/Thấp điểm)
   isAuto        Boolean           @default(false)
@@ -102,12 +126,14 @@ model PowerMeter {
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
   group         PowerMeterGroup?  @relation(fields: [groupId], references: [id], onDelete: SetNull)
-  transformer   PowerTransformer? @relation(fields: [transformerId], references: [id], onDelete: SetNull)
+  transformer     PowerTransformer?     @relation(fields: [transformerId], references: [id], onDelete: SetNull)
+  transformerUnit PowerTransformerUnit? @relation(fields: [transformerUnitId], references: [id], onDelete: SetNull)
   records       PowerRecord[]
   telemetry     PowerTelemetry[]
 
   @@index([groupId])
   @@index([transformerId])
+  @@index([transformerUnitId])
   @@index([isActive, isAuto])
 }
 

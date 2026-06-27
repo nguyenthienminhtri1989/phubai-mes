@@ -22,7 +22,6 @@ import {
   Badge,
   ConfigProvider,
   Dropdown,
-  Layout,
   Menu,
   Tooltip,
   theme,
@@ -35,7 +34,6 @@ import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { ChangePasswordModal } from "./electric/ChangePasswordModal";
 
-const { Sider, Content } = Layout;
 
 // ─── Theme tokens ────────────────────────────────────────────────────────────
 const COLORS = {
@@ -322,7 +320,8 @@ export function AdminLayout({ children }: AdminLayoutProps) {
 
   // Close mobile drawer when route changes
   useEffect(() => {
-    setMobileOpen(false);
+    const timer = window.setTimeout(() => setMobileOpen(false), 0);
+    return () => window.clearTimeout(timer);
   }, [pathname]);
 
   const siderContent = (

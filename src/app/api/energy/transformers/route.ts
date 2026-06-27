@@ -81,8 +81,9 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: "Missing transformer id" }, { status: 400 });
   }
 
-  const used = await prisma.powerMeter.count({ where: { transformerId: id } });
-  if (used) {
+  const usedMeters = await prisma.powerMeter.count({ where: { transformerId: id } });
+  const usedUnits = await prisma.powerTransformerUnit.count({ where: { transformerId: id } });
+  if (usedMeters || usedUnits) {
     const data = await prisma.powerTransformer.update({
       where: { id },
       data: { isActive: false },

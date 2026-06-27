@@ -253,3 +253,29 @@ Migrations chính:
 | 2026-06-25 | Thiết kế lại workflow deploy MES theo mẫu ERP: trước checkout chỉ dừng app MES, sau build chỉ start/reload app MES bằng `--only`, không động app khác. | `.github/workflows/deploy.yml`, `HUONG-DAN-DEPLOY-PHUBAI-MES.md`, `BUSINESS_LOGIC_CONTEXT.md` | Kiểm tra workflow chỉ dùng `phubai-mes-web`, `phubai-mes-energy-cron`, port `3002` |
 | 2026-06-26 | Bổ sung bộ lọc cho `/electric/live` theo nhà máy/trạm biến áp/nhóm đồng hồ, giữ thao tác đọc realtime ở một đồng hồ mỗi lần để tránh quá tải Gateway/Modbus. | `src/components/electric/ElectricClients.tsx`, `BUSINESS_LOGIC_CONTEXT.md` | `npx eslint src/components/electric/ElectricClients.tsx`, `npm run build` |
 | 2026-06-26 | Thiết kế lại `/electric/daily-input` thành màn nhập tay trực quan: bộ lọc ngày/nhà máy/trạm/nhóm, dashboard tiến độ, danh sách cần nhập, modal có chỉ số kỳ trước và ước tính kWh cho MANUAL/AUTO fallback. | `src/components/electric/ElectricClients.tsx`, `BUSINESS_LOGIC_CONTEXT.md` | `npx eslint src/components/electric/ElectricClients.tsx`, `npm run build` |
+
+
+## 2026-06-27 - Bo sung danh muc may bien ap cho module dien
+
+### Current State Update
+
+- Da bo sung model Prisma `PowerTransformerUnit` de quan ly danh muc may bien ap nam giua `PowerTransformer` (tram bien ap) va `PowerMeter` (dong ho dien).
+- `PowerTransformerUnit.id` dung `Int @default(autoincrement())` dung yeu cau id tu dong tang; cac thong tin quan ly gom ma may, ten may, hang san xuat, nam san xuat, so seri, cong suat dinh muc + don vi kVA/MVA, cap dien ap, dong dien dinh muc, trang thai dang dung.
+- `PowerMeter` co them `transformerUnitId` nullable de lien ket dong ho vao may bien ap, trong khi van giu `transformerId` de bao toan du lieu/logic cu theo tram bien ap.
+- API moi: `/api/electric/transformer-units` CRUD danh muc may bien ap, co filter `factoryId`, `substationId`/`transformerId`, va neu may da co dong ho thi DELETE chuyen sang `isActive=false` thay vi xoa cung.
+- API dong ho `/api/electric/meters`/`/api/energy/meters` tra them `transformerUnit`, nhan `transformerUnitId`, va tu dong dong bo `transformerId` theo tram cua may bien ap khi luu dong ho.
+- `/api/electric/daily-status` va `/api/electric/reports` ho tro filter `transformerUnitId`; bao cao chi tiet dong ho tra them `transformerUnitName`.
+- UI `/electric/catalog` co them tab `May bien ap`, form dong ho co truong may bien ap, cac man nhap chi so/realtime/bao cao hien thi hoac loc theo may bien ap.
+
+### Business Rules Update
+
+- Cay danh muc dien nang chuan tu ngay 2026-06-27: `Factory -> PowerTransformer (tram bien ap) -> PowerTransformerUnit (may bien ap) -> PowerMeter`.
+- May bien ap bat buoc co `code` va `name`; cac thong tin ky thuat khac la tuy chon.
+- Dong ho moi nen gan vao `transformerUnitId`; `transformerId` tiep tuc ton tai nhu compatibility field de cac bao cao/cron/API cu khong bi vo trong giai do chuyen tiep.
+- Khi xoa tram bien ap da co may bien ap hoac dong ho, he thong chi ngung dung tram thay vi xoa cung.
+
+### Feature Ledger Update
+
+| Ngay | Thay doi | File chinh | Verify |
+| --- | --- | --- | --- |
+| 2026-06-27 | Them danh muc may bien ap va lien ket cay Factory -> Tram -> May bien ap -> Dong ho dien. | `prisma/schema.prisma`, `prisma/migrations/20260627090000_add_power_transformer_units/migration.sql`, `src/app/api/electric/transformer-units/route.ts`, `src/app/api/energy/meters/route.ts`, `src/app/api/electric/daily-status/route.ts`, `src/app/api/electric/reports/route.ts`, `src/components/electric/ElectricClients.tsx` | `npx prisma generate`, `npx prisma migrate dev --name add_power_transformer_units`, `npm run lint`, `npm run build` |

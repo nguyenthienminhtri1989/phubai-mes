@@ -81,6 +81,24 @@ type Transformer = {
   isActive: boolean;
 };
 
+
+type TransformerUnit = {
+  id: number;
+  code: string;
+  name: string;
+  transformerId?: string | null;
+  transformer?: Transformer | null;
+  manufacturer?: string | null;
+  manufacturingYear?: number | null;
+  serialNumber?: string | null;
+  ratedCapacity?: number | null;
+  ratedCapacityUnit?: string | null;
+  voltageLevel?: string | null;
+  ratedCurrent?: string | null;
+  isActive: boolean;
+  _count?: { meters: number };
+};
+
 type MeterGroup = {
   id: string;
   code: string;
@@ -96,6 +114,7 @@ type ElectricMeter = {
   name: string;
   meterNo?: string | null;
   transformerId?: string | null;
+  transformerUnitId?: number | null;
   groupId?: string | null;
   isActive: boolean;
   type: number; // 1: Hạ thế, 2: Trung thế
@@ -109,6 +128,7 @@ type ElectricMeter = {
   note?: string | null;
   group?: MeterGroup | null;
   transformer?: Transformer | null;
+  transformerUnit?: TransformerUnit | null;
   todayRecord?: PowerRecord | null;
 };
 
@@ -213,6 +233,7 @@ type ReportData = {
     factoryName?: string;
     groupName: string;
     substationName: string;
+    transformerUnitName: string;
     consTotal: number;
     costTotal: number;
   }>;
@@ -298,23 +319,28 @@ export function ElectricCatalogClient() {
   const [loading, setLoading] = useState(false);
   const [factories, setFactories] = useState<Factory[]>([]);
   const [transformers, setTransformers] = useState<Transformer[]>([]);
+  const [transformerUnits, setTransformerUnits] = useState<TransformerUnit[]>([]);
   const [meters, setMeters] = useState<ElectricMeter[]>([]);
   const [groups, setGroups] = useState<MeterGroup[]>([]);
   const [energyTypes, setEnergyTypes] = useState<EnergyType[]>([]);
   const [factoryModalOpen, setFactoryModalOpen] = useState(false);
   const [transformerModalOpen, setTransformerModalOpen] = useState(false);
+  const [transformerUnitModalOpen, setTransformerUnitModalOpen] = useState(false);
   const [meterModalOpen, setMeterModalOpen] = useState(false);
   const [groupModalOpen, setGroupModalOpen] = useState(false);
   const [energyTypeModalOpen, setEnergyTypeModalOpen] = useState(false);
   const [editingFactory, setEditingFactory] = useState<Factory | null>(null);
   const [editingTransformer, setEditingTransformer] = useState<Transformer | null>(null);
+  const [editingTransformerUnit, setEditingTransformerUnit] = useState<TransformerUnit | null>(null);
   const [editingMeter, setEditingMeter] = useState<ElectricMeter | null>(null);
   const [editingGroup, setEditingGroup] = useState<MeterGroup | null>(null);
   const [editingEnergyType, setEditingEnergyType] = useState<EnergyType | null>(null);
   const [meterFilterFactory, setMeterFilterFactory] = useState<string>();
   const [meterFilterTransformer, setMeterFilterTransformer] = useState<string>();
+  const [meterFilterTransformerUnit, setMeterFilterTransformerUnit] = useState<number>();
   const [formFactory] = Form.useForm();
   const [formTransformer] = Form.useForm();
+  const [formTransformerUnit] = Form.useForm();
   const [formMeter] = Form.useForm();
   const [formGroup] = Form.useForm();
   const [formEnergyType] = Form.useForm();
@@ -322,15 +348,17 @@ export function ElectricCatalogClient() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [nextFactories, nextTransformers, nextMeters, nextGroups, nextEnergyTypes] = await Promise.all([
+      const [nextFactories, nextTransformers, nextTransformerUnits, nextMeters, nextGroups, nextEnergyTypes] = await Promise.all([
         fetchJson<Factory[]>("/api/electric/factories"),
         fetchJson<Transformer[]>("/api/electric/substations"),
+        fetchJson<TransformerUnit[]>("/api/electric/transformer-units"),
         fetchJson<ElectricMeter[]>("/api/electric/meters"),
         fetchJson<MeterGroup[]>("/api/electric/meter-groups"),
         fetchJson<EnergyType[]>("/api/electric/energy-types"),
       ]);
       setFactories(nextFactories);
       setTransformers(nextTransformers);
+      setTransformerUnits(nextTransformerUnits);
       setMeters(nextMeters);
       setGroups(nextGroups);
       setEnergyTypes(nextEnergyTypes);
@@ -364,6 +392,13 @@ export function ElectricCatalogClient() {
     formTransformer.resetFields();
     formTransformer.setFieldsValue(record || { isActive: true });
     setTransformerModalOpen(true);
+  };
+
+  const openTransformerUnit = (record?: TransformerUnit) => {
+    setEditingTransformerUnit(record || null);
+    formTransformerUnit.resetFields();
+    formTransformerUnit.setFieldsValue(record || { isActive: true, ratedCapacityUnit: "kVA" });
+    setTransformerUnitModalOpen(true);
   };
 
   const openMeter = (record?: ElectricMeter) => {
@@ -401,6 +436,13 @@ export function ElectricCatalogClient() {
     await load();
   };
 
+  const saveTransformerUnit = async (values: Record<string, unknown>) => {
+    await fetchJson<TransformerUnit>("/api/electric/transformer-units", postBody(editingTransformerUnit ? "PUT" : "POST", { ...values, id: editingTransformerUnit?.id }));
+    message.success("Da luu may bien ap");
+    setTransformerUnitModalOpen(false);
+    await load();
+  };
+
   const saveMeter = async (values: Record<string, unknown>) => {
     await fetchJson<ElectricMeter>("/api/electric/meters", postBody(editingMeter ? "PUT" : "POST", { ...values, id: editingMeter?.id }));
     message.success("Đã lưu đồng hồ điện");
@@ -427,12 +469,21 @@ export function ElectricCatalogClient() {
     [transformers, meterFilterFactory],
   );
 
+  const filteredTransformerUnits = useMemo(
+    () => transformerUnits.filter((item) => {
+      if (meterFilterTransformer && item.transformerId !== meterFilterTransformer) return false;
+      return !meterFilterFactory || item.transformer?.factoryId === meterFilterFactory;
+    }),
+    [transformerUnits, meterFilterFactory, meterFilterTransformer],
+  );
+
   const filteredMeters = useMemo(
     () => meters.filter((meter) => {
       if (meterFilterTransformer && meter.transformerId !== meterFilterTransformer) return false;
+      if (meterFilterTransformerUnit && meter.transformerUnitId !== meterFilterTransformerUnit) return false;
       return !meterFilterFactory || meter.transformer?.factoryId === meterFilterFactory;
     }),
-    [meters, meterFilterFactory, meterFilterTransformer],
+    [meters, meterFilterFactory, meterFilterTransformer, meterFilterTransformerUnit],
   );
 
   const meterColumns: ColumnsType<ElectricMeter> = [
@@ -453,6 +504,7 @@ export function ElectricCatalogClient() {
     { title: "TU/TI", render: (_, record) => String(record.tu) + " / " + String(record.ti) },
     { title: "Nhà máy", render: (_, record) => record.transformer?.factory?.name || "---" },
     { title: "Trạm", render: (_, record) => record.transformer?.name || "---" },
+    { title: "Máy biến áp", render: (_, record) => record.transformerUnit?.name || "---" },
     { title: "Nhóm", render: (_, record) => record.group?.name || "---" },
     {
       title: "Thao tác",
@@ -540,6 +592,35 @@ export function ElectricCatalogClient() {
               ),
             },
             {
+              key: "transformerUnits",
+              label: "Máy biến áp",
+              children: (
+                <Space direction="vertical" size={12} style={{ width: "100%" }}>
+                  {canManageCatalog && <Button type="primary" icon={<PlusOutlined />} onClick={() => openTransformerUnit()}>Thêm máy biến áp</Button>}
+                  <Table
+                    rowKey="id"
+                    loading={loading}
+                    dataSource={transformerUnits}
+                    columns={[
+                      { title: "Mã máy", dataIndex: "code", render: (value: string) => <b>{value}</b> },
+                      { title: "Tên máy biến áp", dataIndex: "name" },
+                      { title: "Trạm", render: (_: unknown, record: TransformerUnit) => record.transformer?.name || "---" },
+                      { title: "Nhà máy", render: (_: unknown, record: TransformerUnit) => record.transformer?.factory?.name || "---" },
+                      { title: "Hãng", dataIndex: "manufacturer" },
+                      { title: "Năm SX", dataIndex: "manufacturingYear", width: 90 },
+                      { title: "Serial", dataIndex: "serialNumber" },
+                      { title: "Công suất", render: (_: unknown, record: TransformerUnit) => record.ratedCapacity ? fmtNumber.format(record.ratedCapacity) + " " + (record.ratedCapacityUnit || "kVA") : "---" },
+                      { title: "Cấp điện áp", dataIndex: "voltageLevel" },
+                      { title: "Dòng định mức", dataIndex: "ratedCurrent" },
+                      { title: "Số đồng hồ", render: (_: unknown, record: TransformerUnit) => record._count?.meters ?? 0 },
+                      { title: "Thao tác", render: (_: unknown, record: TransformerUnit) => canManageCatalog ? <Space><Button size="small" icon={<EditOutlined />} onClick={() => openTransformerUnit(record)} /><Popconfirm title="Xóa hoặc ngưng dùng máy biến áp này?" onConfirm={() => deleteRecord("/api/electric/transformer-units", String(record.id))}><Button size="small" danger icon={<DeleteOutlined />} /></Popconfirm></Space> : null },
+                    ]}
+                    scroll={{ x: 1180 }}
+                  />
+                </Space>
+              ),
+            },
+            {
               key: "meters",
               label: "Đồng hồ điện",
               children: (
@@ -547,8 +628,9 @@ export function ElectricCatalogClient() {
                   <Row gutter={[8, 8]} justify="space-between">
                     <Col>
                       <Space wrap>
-                        <Select allowClear placeholder="Lọc theo nhà máy" style={{ width: 190 }} value={meterFilterFactory} onChange={(value) => { setMeterFilterFactory(value); setMeterFilterTransformer(undefined); }} options={factories.map((factory) => ({ label: factory.name, value: factory.id }))} />
-                        <Select allowClear placeholder="Lọc theo trạm biến áp" style={{ width: 220 }} value={meterFilterTransformer} onChange={setMeterFilterTransformer} disabled={!meterFilterFactory} options={filteredTransformers.map((transformer) => ({ label: transformer.name, value: transformer.id }))} />
+                        <Select allowClear placeholder="Lọc theo nhà máy" style={{ width: 190 }} value={meterFilterFactory} onChange={(value) => { setMeterFilterFactory(value); setMeterFilterTransformer(undefined); setMeterFilterTransformerUnit(undefined); }} options={factories.map((factory) => ({ label: factory.name, value: factory.id }))} />
+                        <Select allowClear placeholder="Lọc theo trạm biến áp" style={{ width: 220 }} value={meterFilterTransformer} onChange={(value) => { setMeterFilterTransformer(value); setMeterFilterTransformerUnit(undefined); }} disabled={!meterFilterFactory} options={filteredTransformers.map((transformer) => ({ label: transformer.name, value: transformer.id }))} />
+                        <Select allowClear placeholder="Lọc theo máy biến áp" style={{ width: 220 }} value={meterFilterTransformerUnit} onChange={setMeterFilterTransformerUnit} disabled={!meterFilterTransformer} options={filteredTransformerUnits.map((unit) => ({ label: unit.name, value: unit.id }))} />
                       </Space>
                     </Col>
                     <Col>{canManageCatalog && <Button type="primary" icon={<PlusOutlined />} onClick={() => openMeter()}>Thêm đồng hồ</Button>}</Col>
@@ -599,6 +681,23 @@ export function ElectricCatalogClient() {
       <Modal title={editingTransformer ? "Sửa trạm biến áp" : "Thêm trạm biến áp"} open={transformerModalOpen} onCancel={() => setTransformerModalOpen(false)} onOk={() => formTransformer.submit()}>
         <Form form={formTransformer} layout="vertical" onFinish={saveTransformer}><Form.Item name="factoryId" label="Nhà máy" rules={[{ required: true }]}><Select options={factories.map((item) => ({ label: item.name, value: item.id }))} /></Form.Item><Form.Item name="code" label="Mã trạm" rules={[{ required: true }]}><Input /></Form.Item><Form.Item name="name" label="Tên trạm" rules={[{ required: true }]}><Input /></Form.Item><Form.Item name="capacityKva" label="Công suất kVA"><InputNumber min={0} style={{ width: "100%" }} /></Form.Item><Form.Item name="location" label="Vị trí"><Input /></Form.Item><Form.Item name="isActive" label="Đang dùng" valuePropName="checked"><Switch /></Form.Item></Form>
       </Modal>
+      <Modal title={editingTransformerUnit ? "Sửa máy biến áp" : "Thêm máy biến áp"} open={transformerUnitModalOpen} width={760} onCancel={() => setTransformerUnitModalOpen(false)} onOk={() => formTransformerUnit.submit()}>
+        <Form form={formTransformerUnit} layout="vertical" onFinish={saveTransformerUnit}>
+          <Row gutter={12}>
+            <Col xs={24} md={12}><Form.Item name="transformerId" label="Trạm biến áp" rules={[{ required: true }]}><Select options={transformers.map((item) => ({ label: item.factory ? item.factory.name + " - " + item.name : item.name, value: item.id }))} /></Form.Item></Col>
+            <Col xs={24} md={12}><Form.Item name="code" label="Mã máy biến áp" rules={[{ required: true }]}><Input /></Form.Item></Col>
+            <Col xs={24} md={12}><Form.Item name="name" label="Tên máy biến áp" rules={[{ required: true }]}><Input /></Form.Item></Col>
+            <Col xs={24} md={12}><Form.Item name="manufacturer" label="Hãng sản xuất"><Input /></Form.Item></Col>
+            <Col xs={24} md={8}><Form.Item name="manufacturingYear" label="Năm sản xuất"><InputNumber min={1900} max={2100} style={{ width: "100%" }} /></Form.Item></Col>
+            <Col xs={24} md={8}><Form.Item name="serialNumber" label="Số Seri"><Input /></Form.Item></Col>
+            <Col xs={24} md={8}><Form.Item name="ratedCapacity" label="Công suất định mức"><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col>
+            <Col xs={24} md={8}><Form.Item name="ratedCapacityUnit" label="Đơn vị công suất"><Select options={[{ label: "kVA", value: "kVA" }, { label: "MVA", value: "MVA" }]} /></Form.Item></Col>
+            <Col xs={24} md={8}><Form.Item name="voltageLevel" label="Cấp điện áp"><Input placeholder="22/0.4 kV" /></Form.Item></Col>
+            <Col xs={24} md={8}><Form.Item name="ratedCurrent" label="Dòng điện định mức"><Input /></Form.Item></Col>
+          </Row>
+          <Form.Item name="isActive" label="Đang dùng" valuePropName="checked"><Switch /></Form.Item>
+        </Form>
+      </Modal>
       <Modal title={editingGroup ? "Sửa nhóm đồng hồ" : "Thêm nhóm đồng hồ"} open={groupModalOpen} onCancel={() => setGroupModalOpen(false)} onOk={() => formGroup.submit()}>
         <Form form={formGroup} layout="vertical" onFinish={saveGroup}><Form.Item name="code" label="Mã nhóm" rules={[{ required: true }]}><Input /></Form.Item><Form.Item name="name" label="Tên nhóm" rules={[{ required: true }]}><Input /></Form.Item><Form.Item name="sortOrder" label="Thứ tự"><InputNumber min={0} style={{ width: "100%" }} /></Form.Item><Form.Item name="description" label="Mô tả"><Input.TextArea rows={2} /></Form.Item><Form.Item name="isActive" label="Đang dùng" valuePropName="checked"><Switch /></Form.Item></Form>
       </Modal>
@@ -607,7 +706,7 @@ export function ElectricCatalogClient() {
       </Modal>
       <Modal title={editingMeter ? "Sửa đồng hồ điện" : "Thêm đồng hồ điện"} open={meterModalOpen} width={760} onCancel={() => setMeterModalOpen(false)} onOk={() => formMeter.submit()}>
         <Form form={formMeter} layout="vertical" onFinish={saveMeter}>
-          <Row gutter={12}><Col xs={24} md={8}><Form.Item name="code" label="Mã đồng hồ" rules={[{ required: true }]}><Input /></Form.Item></Col><Col xs={24} md={16}><Form.Item name="name" label="Tên đồng hồ" rules={[{ required: true }]}><Input /></Form.Item></Col><Col xs={24} md={12}><Form.Item name="transformerId" label="Trạm biến áp" rules={[{ required: true }]}><Select allowClear options={transformers.map((item) => ({ label: item.factory ? item.factory.name + " - " + item.name : item.name, value: item.id }))} /></Form.Item></Col><Col xs={24} md={12}><Form.Item name="groupId" label="Nhóm đồng hồ"><Select allowClear options={groups.map((item) => ({ label: item.name, value: item.id }))} /></Form.Item></Col><Col xs={24} md={8}><Form.Item name="type" label="Loại đồng hồ" rules={[{ required: true }]}><Select options={[{ label: "Hạ thế (1 chỉ số)", value: 1 }, { label: "Trung thế (3 chỉ số)", value: 2 }]} /></Form.Item></Col><Col xs={24} md={8}><Form.Item name="tu" label="TU" rules={[{ required: true }]}><InputNumber min={1} style={{ width: "100%" }} /></Form.Item></Col><Col xs={24} md={8}><Form.Item name="ti" label="TI" rules={[{ required: true }]}><InputNumber min={1} style={{ width: "100%" }} /></Form.Item></Col><Col xs={24} md={8}><Form.Item name="meterNo" label="Số serial"><Input /></Form.Item></Col></Row>
+          <Row gutter={12}><Col xs={24} md={8}><Form.Item name="code" label="Mã đồng hồ" rules={[{ required: true }]}><Input /></Form.Item></Col><Col xs={24} md={16}><Form.Item name="name" label="Tên đồng hồ" rules={[{ required: true }]}><Input /></Form.Item></Col><Col xs={24} md={12}><Form.Item name="transformerId" label="Trạm biến áp" rules={[{ required: true }]}><Select allowClear options={transformers.map((item) => ({ label: item.factory ? item.factory.name + " - " + item.name : item.name, value: item.id }))} /></Form.Item></Col><Col xs={24} md={12}><Form.Item noStyle shouldUpdate={(prev, next) => prev.transformerId !== next.transformerId}>{({ getFieldValue }) => <Form.Item name="transformerUnitId" label="Máy biến áp" rules={[{ required: true }]}><Select allowClear options={transformerUnits.filter((unit) => !getFieldValue("transformerId") || unit.transformerId === getFieldValue("transformerId")).map((unit) => ({ label: unit.name, value: unit.id }))} /></Form.Item>}</Form.Item></Col><Col xs={24} md={12}><Form.Item name="groupId" label="Nhóm đồng hồ"><Select allowClear options={groups.map((item) => ({ label: item.name, value: item.id }))} /></Form.Item></Col><Col xs={24} md={8}><Form.Item name="type" label="Loại đồng hồ" rules={[{ required: true }]}><Select options={[{ label: "Hạ thế (1 chỉ số)", value: 1 }, { label: "Trung thế (3 chỉ số)", value: 2 }]} /></Form.Item></Col><Col xs={24} md={8}><Form.Item name="tu" label="TU" rules={[{ required: true }]}><InputNumber min={1} style={{ width: "100%" }} /></Form.Item></Col><Col xs={24} md={8}><Form.Item name="ti" label="TI" rules={[{ required: true }]}><InputNumber min={1} style={{ width: "100%" }} /></Form.Item></Col><Col xs={24} md={8}><Form.Item name="meterNo" label="Số serial"><Input /></Form.Item></Col></Row>
           <Card size="small" title="Cấu hình thu thập tự động qua Gateway" style={{ marginBottom: 16 }}><Form.Item name="isAuto" label="Chế độ lấy số" valuePropName="checked"><Switch checkedChildren="AUTO" unCheckedChildren="MANUAL" /></Form.Item><Form.Item noStyle shouldUpdate={(prev, next) => prev.isAuto !== next.isAuto}>{({ getFieldValue }) => getFieldValue("isAuto") ? <Row gutter={12}><Col xs={24} md={10}><Form.Item name="gatewayIp" label="Gateway IP" rules={[{ required: true }]}><Input placeholder="192.168.1.253" /></Form.Item></Col><Col xs={24} md={7}><Form.Item name="gatewayPort" label="Gateway Port" rules={[{ required: true }]}><InputNumber min={1} style={{ width: "100%" }} /></Form.Item></Col><Col xs={24} md={7}><Form.Item name="modbusId" label="Slave ID" rules={[{ required: true }]}><InputNumber min={1} max={255} style={{ width: "100%" }} /></Form.Item></Col><Col xs={24} md={7}><Form.Item name="registerAddr" label="Register Active Energy"><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col></Row> : null}</Form.Item></Card>
           <Form.Item name="note" label="Mô tả / khu vực đo"><Input.TextArea rows={2} /></Form.Item><Form.Item name="isActive" label="Đang dùng" valuePropName="checked"><Switch /></Form.Item>
         </Form>
@@ -621,10 +720,12 @@ export function ElectricDailyInputClient() {
   const [selectedDate, setSelectedDate] = useState<Dayjs>(dayjs().subtract(1, "day"));
   const [factories, setFactories] = useState<Factory[]>([]);
   const [transformers, setTransformers] = useState<Transformer[]>([]);
+  const [transformerUnits, setTransformerUnits] = useState<TransformerUnit[]>([]);
   const [groups, setGroups] = useState<MeterGroup[]>([]);
   const [meters, setMeters] = useState<ElectricMeter[]>([]);
   const [selectedFactory, setSelectedFactory] = useState<string>();
   const [selectedTransformer, setSelectedTransformer] = useState<string>();
+  const [selectedTransformerUnit, setSelectedTransformerUnit] = useState<number>();
   const [selectedGroup, setSelectedGroup] = useState<string>();
   const [modeFilter, setModeFilter] = useState<"all" | "manual" | "auto">("all");
   const [statusFilter, setStatusFilter] = useState<"needsInput" | "all" | "done">("needsInput");
@@ -640,11 +741,13 @@ export function ElectricDailyInputClient() {
     Promise.all([
       fetchJson<Factory[]>("/api/electric/factories"),
       fetchJson<Transformer[]>("/api/electric/substations"),
+      fetchJson<TransformerUnit[]>("/api/electric/transformer-units"),
       fetchJson<MeterGroup[]>("/api/electric/meter-groups"),
     ])
-      .then(([nextFactories, nextTransformers, nextGroups]) => {
+      .then(([nextFactories, nextTransformers, nextTransformerUnits, nextGroups]) => {
         setFactories(nextFactories.filter((item) => item.isActive));
         setTransformers(nextTransformers.filter((item) => item.isActive));
+        setTransformerUnits(nextTransformerUnits.filter((item) => item.isActive));
         setGroups(nextGroups.filter((item) => item.isActive));
       })
       .catch(() => message.error("Không tải được danh mục điện năng"));
@@ -655,11 +758,20 @@ export function ElectricDailyInputClient() {
     [transformers, selectedFactory],
   );
 
+  const filteredDailyTransformerUnits = useMemo(
+    () => transformerUnits.filter((item) => {
+      if (selectedTransformer && item.transformerId !== selectedTransformer) return false;
+      return !selectedFactory || item.transformer?.factoryId === selectedFactory;
+    }),
+    [transformerUnits, selectedFactory, selectedTransformer],
+  );
+
   const loadMeters = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams({ date: selectedDate.format("YYYY-MM-DD") });
       if (selectedTransformer) params.set("substationId", selectedTransformer);
+      if (selectedTransformerUnit) params.set("transformerUnitId", String(selectedTransformerUnit));
       if (!selectedTransformer && selectedFactory) params.set("factoryId", selectedFactory);
       setMeters(await fetchJson<ElectricMeter[]>("/api/electric/daily-status?" + params.toString()));
     } catch (error) {
@@ -667,7 +779,7 @@ export function ElectricDailyInputClient() {
     } finally {
       setLoading(false);
     }
-  }, [selectedDate, selectedFactory, selectedTransformer]);
+  }, [selectedDate, selectedFactory, selectedTransformer, selectedTransformerUnit]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadMeters(), 0);
@@ -748,8 +860,9 @@ export function ElectricDailyInputClient() {
       <Card style={{ marginBottom: 16 }}>
         <Row gutter={[12, 12]} align="middle">
           <Col xs={24} md={6} lg={4}><DatePicker value={selectedDate} onChange={(value) => value && setSelectedDate(value)} style={{ width: "100%" }} /></Col>
-          <Col xs={24} md={6} lg={5}><Select allowClear placeholder="Nhà máy" value={selectedFactory} onChange={(value) => { setSelectedFactory(value); setSelectedTransformer(undefined); }} options={factories.map((item) => ({ label: item.name, value: item.id }))} style={{ width: "100%" }} /></Col>
-          <Col xs={24} md={8} lg={6}><Select allowClear showSearch optionFilterProp="label" placeholder="Trạm biến áp" value={selectedTransformer} onChange={setSelectedTransformer} options={filteredTransformers.map((item) => ({ label: item.factory ? item.factory.name + " - " + item.name : item.name, value: item.id }))} style={{ width: "100%" }} /></Col>
+          <Col xs={24} md={6} lg={5}><Select allowClear placeholder="Nhà máy" value={selectedFactory} onChange={(value) => { setSelectedFactory(value); setSelectedTransformer(undefined); setSelectedTransformerUnit(undefined); }} options={factories.map((item) => ({ label: item.name, value: item.id }))} style={{ width: "100%" }} /></Col>
+          <Col xs={24} md={8} lg={6}><Select allowClear showSearch optionFilterProp="label" placeholder="Trạm biến áp" value={selectedTransformer} onChange={(value) => { setSelectedTransformer(value); setSelectedTransformerUnit(undefined); }} options={filteredTransformers.map((item) => ({ label: item.factory ? item.factory.name + " - " + item.name : item.name, value: item.id }))} style={{ width: "100%" }} /></Col>
+          <Col xs={24} md={8} lg={5}><Select allowClear showSearch optionFilterProp="label" placeholder="Máy biến áp" value={selectedTransformerUnit} onChange={setSelectedTransformerUnit} options={filteredDailyTransformerUnits.map((item) => ({ label: item.name, value: item.id }))} style={{ width: "100%" }} /></Col>
           <Col xs={24} md={4} lg={3}><Button icon={<ReloadOutlined />} onClick={loadMeters} loading={loading} block>Tải</Button></Col>
           <Col xs={24} lg={6}><Input.Search allowClear placeholder="Tìm mã, tên, serial" value={keyword} onChange={(event) => setKeyword(event.target.value)} /></Col>
         </Row>
@@ -783,7 +896,7 @@ export function ElectricDailyInputClient() {
         columns={[
           { title: "Mã", dataIndex: "code", width: 110, render: (value: string, record: ElectricMeter) => <Space direction="vertical" size={0}><b>{value}</b><Text type="secondary" style={{ fontSize: 12 }}>{record.meterNo || "---"}</Text></Space> },
           { title: "Tên đồng hồ", dataIndex: "name" },
-          { title: "Khu vực", render: (_: unknown, record: ElectricMeter) => <Space direction="vertical" size={0}><Text>{record.transformer?.factory?.name || "---"}</Text><Text type="secondary" style={{ fontSize: 12 }}>{record.transformer?.name || "---"}</Text></Space> },
+          { title: "Khu vực", render: (_: unknown, record: ElectricMeter) => <Space direction="vertical" size={0}><Text>{record.transformer?.factory?.name || "---"}</Text><Text type="secondary" style={{ fontSize: 12 }}>{record.transformer?.name || "---"}</Text><Text type="secondary" style={{ fontSize: 12 }}>{record.transformerUnit?.name || "---"}</Text></Space> },
           { title: "Nhóm", render: (_: unknown, record: ElectricMeter) => record.group?.name || "---" },
           { title: "Loại", dataIndex: "type", render: (value: number) => value === 2 ? <Tag color="purple">Trung thế</Tag> : <Tag color="blue">Hạ thế</Tag> },
           { title: "Chế độ", dataIndex: "isAuto", render: (value: boolean) => <Tag color={value ? "green" : "gold"}>{value ? "AUTO" : "MANUAL"}</Tag> },
@@ -832,10 +945,12 @@ export function ElectricLiveClient() {
   const { canEditDaily } = useRole();
   const [factories, setFactories] = useState<Factory[]>([]);
   const [transformers, setTransformers] = useState<Transformer[]>([]);
+  const [transformerUnits, setTransformerUnits] = useState<TransformerUnit[]>([]);
   const [groups, setGroups] = useState<MeterGroup[]>([]);
   const [meters, setMeters] = useState<ElectricMeter[]>([]);
   const [filterFactoryId, setFilterFactoryId] = useState<string>();
   const [filterTransformerId, setFilterTransformerId] = useState<string>();
+  const [filterTransformerUnitId, setFilterTransformerUnitId] = useState<number>();
   const [filterGroupId, setFilterGroupId] = useState<string>();
   const [selectedMeterId, setSelectedMeterId] = useState<string>();
   const [liveData, setLiveData] = useState<LiveData | null>(null);
@@ -847,12 +962,14 @@ export function ElectricLiveClient() {
     Promise.all([
       fetchJson<Factory[]>("/api/electric/factories"),
       fetchJson<Transformer[]>("/api/electric/substations"),
+      fetchJson<TransformerUnit[]>("/api/electric/transformer-units"),
       fetchJson<MeterGroup[]>("/api/electric/meter-groups"),
       fetchJson<ElectricMeter[]>("/api/electric/meters"),
     ])
-      .then(([nextFactories, nextTransformers, nextGroups, nextMeters]) => {
+      .then(([nextFactories, nextTransformers, nextTransformerUnits, nextGroups, nextMeters]) => {
         setFactories(nextFactories.filter((item) => item.isActive));
         setTransformers(nextTransformers.filter((item) => item.isActive));
+        setTransformerUnits(nextTransformerUnits.filter((item) => item.isActive));
         setGroups(nextGroups.filter((item) => item.isActive));
         setMeters(nextMeters.filter((meter) => meter.isActive && meter.isAuto));
       })
@@ -864,12 +981,21 @@ export function ElectricLiveClient() {
     [transformers, filterFactoryId],
   );
 
+  const filteredLiveTransformerUnits = useMemo(
+    () => transformerUnits.filter((item) => {
+      if (filterTransformerId && item.transformerId !== filterTransformerId) return false;
+      return !filterFactoryId || item.transformer?.factoryId === filterFactoryId;
+    }),
+    [transformerUnits, filterFactoryId, filterTransformerId],
+  );
+
   const filteredMeters = useMemo(() => meters.filter((meter) => {
     if (filterFactoryId && meter.transformer?.factoryId !== filterFactoryId) return false;
     if (filterTransformerId && meter.transformerId !== filterTransformerId) return false;
+    if (filterTransformerUnitId && meter.transformerUnitId !== filterTransformerUnitId) return false;
     if (filterGroupId && meter.groupId !== filterGroupId) return false;
     return true;
-  }), [meters, filterFactoryId, filterTransformerId, filterGroupId]);
+  }), [meters, filterFactoryId, filterTransformerId, filterTransformerUnitId, filterGroupId]);
 
   const meter = meters.find((item) => item.id === selectedMeterId);
 
@@ -918,13 +1044,16 @@ export function ElectricLiveClient() {
       <Card style={{ marginBottom: 16 }}>
         <Row gutter={[12, 12]}>
           <Col xs={24} md={8} lg={5}>
-            <Select allowClear placeholder="Nhà máy" style={{ width: "100%" }} value={filterFactoryId} onChange={(value) => { setFilterFactoryId(value); setFilterTransformerId(undefined); selectMeter(undefined); }} options={factories.map((item) => ({ label: item.name, value: item.id }))} />
+            <Select allowClear placeholder="Nhà máy" style={{ width: "100%" }} value={filterFactoryId} onChange={(value) => { setFilterFactoryId(value); setFilterTransformerId(undefined); setFilterTransformerUnitId(undefined); selectMeter(undefined); }} options={factories.map((item) => ({ label: item.name, value: item.id }))} />
           </Col>
           <Col xs={24} md={8} lg={6}>
-            <Select allowClear placeholder="Trạm biến áp" style={{ width: "100%" }} value={filterTransformerId} onChange={(value) => { setFilterTransformerId(value); selectMeter(undefined); }} options={filteredTransformers.map((item) => ({ label: item.factory ? item.factory.name + " - " + item.name : item.name, value: item.id }))} />
+            <Select allowClear placeholder="Trạm biến áp" style={{ width: "100%" }} value={filterTransformerId} onChange={(value) => { setFilterTransformerId(value); setFilterTransformerUnitId(undefined); selectMeter(undefined); }} options={filteredTransformers.map((item) => ({ label: item.factory ? item.factory.name + " - " + item.name : item.name, value: item.id }))} />
           </Col>
           <Col xs={24} md={8} lg={5}>
             <Select allowClear placeholder="Nhóm đồng hồ" style={{ width: "100%" }} value={filterGroupId} onChange={(value) => { setFilterGroupId(value); selectMeter(undefined); }} options={groups.map((item) => ({ label: item.name, value: item.id }))} />
+          </Col>
+          <Col xs={24} md={8} lg={5}>
+            <Select allowClear placeholder="Máy biến áp" style={{ width: "100%" }} value={filterTransformerUnitId} onChange={(value) => { setFilterTransformerUnitId(value); selectMeter(undefined); }} options={filteredLiveTransformerUnits.map((item) => ({ label: item.name, value: item.id }))} />
           </Col>
           <Col xs={24} lg={8}>
             <Space wrap style={{ width: "100%" }}>
@@ -1279,7 +1408,7 @@ export function ElectricReportsClient() {
         <Table rowKey={(record) => record.factoryId || record.factoryCode} loading={loading} dataSource={report?.byFactory || []} pagination={false} columns={[{ title: "Nhà máy", dataIndex: "factoryName" }, { title: "Tiêu thụ", dataIndex: "consTotal", align: "right", render: (value: number) => fmtNumber.format(value) + " kWh" }, { title: "Chi phí", dataIndex: "costTotal", align: "right", render: (value: number) => fmtMoney.format(value) + " VNĐ" }]} />
       </Card>
       <Card title="Chi tiết theo đồng hồ">
-        <Table rowKey="meterId" loading={loading} dataSource={report?.byMeter || []} columns={[{ title: "Mã ĐH", dataIndex: "meterCode", render: (value: string) => <Tag color="blue">{value}</Tag> }, { title: "Tên đồng hồ", dataIndex: "meterName" }, { title: "Nhà máy", dataIndex: "factoryName" }, { title: "Trạm", dataIndex: "substationName" }, { title: "Nhóm", dataIndex: "groupName" }, { title: "Tiêu thụ", dataIndex: "consTotal", align: "right", render: (value: number) => fmtNumber.format(value) + " kWh" }, { title: "Chi phí", dataIndex: "costTotal", align: "right", render: (value: number) => fmtMoney.format(value) + " VNĐ" }]} />
+        <Table rowKey="meterId" loading={loading} dataSource={report?.byMeter || []} columns={[{ title: "Mã ĐH", dataIndex: "meterCode", render: (value: string) => <Tag color="blue">{value}</Tag> }, { title: "Tên đồng hồ", dataIndex: "meterName" }, { title: "Nhà máy", dataIndex: "factoryName" }, { title: "Trạm", dataIndex: "substationName" }, { title: "Máy biến áp", dataIndex: "transformerUnitName" }, { title: "Nhóm", dataIndex: "groupName" }, { title: "Tiêu thụ", dataIndex: "consTotal", align: "right", render: (value: number) => fmtNumber.format(value) + " kWh" }, { title: "Chi phí", dataIndex: "costTotal", align: "right", render: (value: number) => fmtMoney.format(value) + " VNĐ" }]} />
       </Card>
     </>
   );
