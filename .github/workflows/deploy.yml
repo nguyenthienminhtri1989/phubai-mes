@@ -18,7 +18,8 @@ jobs:
 
     env:
       NEXT_TELEMETRY_DISABLED: 1
-      PM2_HOME: ${{ github.workspace }}\.pm2
+      DEPLOY_DIR: D:\apps\phubai-mes
+      PM2_HOME: D:\apps\phubai-mes\.pm2
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       NEXTAUTH_URL: ${{ secrets.NEXTAUTH_URL }}
       NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
@@ -31,23 +32,39 @@ jobs:
       FEEDBACK_TO: ${{ secrets.FEEDBACK_TO }}
 
     steps:
-      - name: 1. Stop MES PM2 apps before checkout
+      - name: 1. Stop MES PM2 apps (deploy dir + legacy checkout dir)
         shell: powershell
         run: |
           New-Item -ItemType Directory -Force -Path $env:PM2_HOME | Out-Null
-          $pm2 = Join-Path $env:GITHUB_WORKSPACE "node_modules\.bin\pm2.cmd"
+
+          # Try deploy dir first (normal path after migration)
+          $pm2 = Join-Path $env:DEPLOY_DIR "node_modules\.bin\pm2.cmd"
           if (Test-Path $pm2) {
+            Write-Host ">> Stopping MES apps from deploy dir..."
             & $pm2 stop phubai-mes-web 2>$null
             & $pm2 stop phubai-mes-energy-cron 2>$null
-          } else {
-            Write-Host ">> PM2 local binary not found yet. Skipping PM2 stop."
           }
 
+          # Fallback: try legacy checkout dir (transition from old workflow)
+          $legacyPm2 = Join-Path $env:GITHUB_WORKSPACE "node_modules\.bin\pm2.cmd"
+          $legacyHome = Join-Path $env:GITHUB_WORKSPACE ".pm2"
+          if (Test-Path $legacyPm2) {
+            Write-Host ">> Also stopping from legacy checkout dir..."
+            $env:PM2_HOME_BAK = $env:PM2_HOME
+            $env:PM2_HOME = $legacyHome
+            & $legacyPm2 stop phubai-mes-web 2>$null
+            & $legacyPm2 stop phubai-mes-energy-cron 2>$null
+            $env:PM2_HOME = $env:PM2_HOME_BAK
+          }
+
+          Start-Sleep -Seconds 2
+
+          # Kill any process still on port 3002
           $conn = Get-NetTCPConnection -LocalPort 3002 -ErrorAction SilentlyContinue
           if ($conn) {
             Stop-Process -Id $conn.OwningProcess -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 1
           }
-          Start-Sleep -Seconds 2
 
       - name: 2. Checkout source
         uses: actions/checkout@v4
@@ -92,7 +109,7 @@ jobs:
             'SMTP_PASS="' + $env:SMTP_PASS + '"',
             'FEEDBACK_TO="' + $env:FEEDBACK_TO + '"'
           )
-          Set-Content -LiteralPath .env -Value $envLines -Encoding utf8
+          Set-Content -LiteralPath .env -Encoding utf8 -Value $envLines
 
       - name: 6. Install dependencies
         run: npm ci --include=dev
@@ -106,15 +123,30 @@ jobs:
       - name: 9. Build Next.js app
         run: npm run build
 
-      - name: 10. Start only MES PM2 apps
+      - name: 10. Sync build to deploy directory
+        shell: powershell
+        run: |
+          $src = $env:GITHUB_WORKSPACE
+          $dst = $env:DEPLOY_DIR
+          New-Item -ItemType Directory -Force -Path $dst | Out-Null
+
+          Write-Host ">> Syncing $src -> $dst ..."
+          robocopy $src $dst /MIR /XD .git .github .pm2 /XF .gitignore .gitattributes /NFL /NDL /NP /NS /NC
+          if ($LASTEXITCODE -ge 8) {
+            throw "Robocopy failed with exit code $LASTEXITCODE"
+          }
+          Write-Host ">> Sync complete."
+
+      - name: 11. Start MES PM2 apps from deploy directory
         shell: powershell
         run: |
           New-Item -ItemType Directory -Force -Path $env:PM2_HOME | Out-Null
-          $pm2 = Join-Path (Get-Location) "node_modules\.bin\pm2.cmd"
+          $pm2 = Join-Path $env:DEPLOY_DIR "node_modules\.bin\pm2.cmd"
           if (!(Test-Path $pm2)) {
-            throw "PM2 local binary not found: $pm2"
+            throw "PM2 binary not found at: $pm2"
           }
 
+          Set-Location $env:DEPLOY_DIR
           & $pm2 startOrReload ecosystem.config.cjs --only phubai-mes-web --update-env
           & $pm2 startOrReload ecosystem.config.cjs --only phubai-mes-energy-cron --update-env
           & $pm2 save
@@ -127,16 +159,17 @@ jobs:
             Start-Sleep -Seconds 1
           }
 
-      - name: 11. Fallback restart MES apps on failed deploy
+      - name: 12. Fallback restart MES apps on failed deploy
         if: failure()
         shell: powershell
         run: |
           New-Item -ItemType Directory -Force -Path $env:PM2_HOME | Out-Null
-          $pm2 = Join-Path $env:GITHUB_WORKSPACE "node_modules\.bin\pm2.cmd"
+          $pm2 = Join-Path $env:DEPLOY_DIR "node_modules\.bin\pm2.cmd"
           if (Test-Path $pm2) {
+            Set-Location $env:DEPLOY_DIR
             & $pm2 startOrReload ecosystem.config.cjs --only phubai-mes-web --update-env
             & $pm2 startOrReload ecosystem.config.cjs --only phubai-mes-energy-cron --update-env
             & $pm2 save
           } else {
-            Write-Host ">> PM2 local binary not found. Fallback restart skipped."
+            Write-Host ">> PM2 not found in deploy dir. Fallback skipped."
           }

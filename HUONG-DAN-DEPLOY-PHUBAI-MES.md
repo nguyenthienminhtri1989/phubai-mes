@@ -11,13 +11,15 @@ Trên máy chủ có 2 tiến trình PM2:
 - `phubai-mes-web`: chạy Next.js production ở port `3002`.
 - `phubai-mes-energy-cron`: chạy `scripts/energy-cron.js` để thu telemetry và chốt điện năng lúc 08:00.
 
-Workflow dùng `npx pm2` từ dependency của repo để không phụ thuộc PATH của PM2 global trong Windows service account. Workflow cũng đặt `PM2_HOME` vào thư mục checkout để tránh PM2 ghi vào profile `NetworkService`. PM2 apps có `windowsHide: true` để không bật cửa sổ `node.exe` trên Windows.
+Workflow dùng PM2 local binary từ thư mục deploy, không phụ thuộc PM2 global. `PM2_HOME` đặt cố định tại `D:\apps\phubai-mes\.pm2` (ngoài thư mục checkout của runner). PM2 apps có `windowsHide: true` để không bật cửa sổ `node.exe` trên Windows.
+
+Thư mục deploy cố định: `D:\apps\phubai-mes`. Workflow build trong `_work` (checkout dir), sau đó robocopy mirror sang `D:\apps\phubai-mes`, PM2 chạy app từ đó. Tách biệt thư mục build và thư mục chạy app để runner không bị lock file khi prepare workflow cho lần deploy sau.
 
 Workflow deploy MES chỉ stop/start `phubai-mes-web` và `phubai-mes-energy-cron`, chỉ kiểm tra/giải phóng port `3002`, không động tới ERP/HRM hoặc port khác.
 
 Workflow deploy chính:
 
-Dev push GitHub -> GitHub Actions self-hosted runner trên server -> Prisma migrate deploy -> Next build -> PM2 restart.
+Dev push GitHub -> GitHub Actions self-hosted runner -> Prisma migrate deploy -> Next build -> Robocopy sang D:\apps\phubai-mes -> PM2 restart.
 
 ## 2. Chuẩn bị server lần đầu
 
@@ -137,15 +139,18 @@ Workflow chạy khi:
 
 Các bước workflow:
 
-1. Checkout source.
-2. Setup Node.js 22.
-3. Tạo file `.env` từ GitHub Secrets.
-4. Chạy `npm ci`.
-5. Chạy `npx prisma generate`.
-6. Chạy `npx prisma migrate deploy`.
-7. Chạy `npm run build`.
-8. Chạy `npx pm2 startOrRestart ecosystem.config.cjs --update-env`.
-9. Chạy `npx pm2 save`.
+1. Stop PM2 MES apps từ thư mục deploy (không ảnh hưởng ERP/HRM).
+2. Checkout source vào `_work`.
+3. Setup Node.js 22.
+4. Validate secrets.
+5. Tạo file `.env` từ GitHub Secrets.
+6. Chạy `npm ci`.
+7. Chạy `npx prisma generate`.
+8. Chạy `npx prisma migrate deploy`.
+9. Chạy `npm run build`.
+10. Robocopy mirror `_work` sang `D:\apps\phubai-mes` (loại trừ `.git`, `.github`, `.pm2`).
+11. Start PM2 MES apps từ `D:\apps\phubai-mes`.
+12. Fallback: nếu deploy lỗi, restart app từ deploy dir.
 
 ## 7. PM2 ecosystem
 
@@ -155,16 +160,18 @@ Repo có file:
 ecosystem.config.cjs
 ```
 
-File này dùng `__dirname` làm `cwd`, nên có thể chạy trong thư mục checkout của GitHub Actions, không cần hard-code `D:/PHUBAI-MES/phubai-mes`.
+File này dùng `__dirname` làm `cwd`. Khi nằm trong `D:\apps\phubai-mes`, PM2 tự trỏ vào đúng thư mục deploy.
 
 Nếu cần kiểm tra thủ công trên server:
 
 ```powershell
-npx pm2 startOrRestart ecosystem.config.cjs --update-env
-npx pm2 status
-npx pm2 logs phubai-mes-web
-npx pm2 logs phubai-mes-energy-cron
-npx pm2 save
+cd D:\apps\phubai-mes
+$env:PM2_HOME = "D:\apps\phubai-mes\.pm2"
+.\node_modules\.bin\pm2.cmd startOrRestart ecosystem.config.cjs --update-env
+.\node_modules\.bin\pm2.cmd status
+.\node_modules\.bin\pm2.cmd logs phubai-mes-web
+.\node_modules\.bin\pm2.cmd logs phubai-mes-energy-cron
+.\node_modules\.bin\pm2.cmd save
 ```
 
 ## 8. Cloudflare Tunnel
