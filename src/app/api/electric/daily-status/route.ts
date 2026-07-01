@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { toRecordDate } from "@/lib/energy-record";
 import { prisma } from "@/lib/prisma";
 
@@ -50,12 +50,47 @@ export async function GET(request: NextRequest) {
     orderBy: { code: "asc" },
   });
 
+  const meterIds = meters.map((meter) => meter.id);
+
+  const lastRecords = meterIds.length
+    ? await prisma.powerRecord.findMany({
+        where: {
+          meterId: { in: meterIds },
+          recordDate: { lt: recordDate },
+        },
+        orderBy: [{ meterId: "asc" }, { recordDate: "desc" }],
+        distinct: ["meterId"],
+      })
+    : [];
+  const lastByMeter = new Map(lastRecords.map((record) => [record.meterId, record]));
+
+  const sevenDaysAgo = new Date(recordDate);
+  sevenDaysAgo.setUTCDate(sevenDaysAgo.getUTCDate() - 7);
+  const recentRecords = meterIds.length
+    ? await prisma.powerRecord.findMany({
+        where: {
+          meterId: { in: meterIds },
+          recordDate: { gte: sevenDaysAgo, lt: recordDate },
+        },
+        select: { meterId: true, consTotal: true },
+      })
+    : [];
+  const avgByMeter = new Map<string, number>();
+  for (const meterId of meterIds) {
+    const values = recentRecords.filter((record) => record.meterId === meterId);
+    if (!values.length) continue;
+    const sum = values.reduce((acc, record) => acc + Number(record.consTotal || 0), 0);
+    avgByMeter.set(meterId, sum / values.length);
+  }
+
   return NextResponse.json(
     meters.map((meter) => {
       const { records, ...rest } = meter;
       return {
         ...rest,
         todayRecord: records[0] || null,
+        lastRecord: lastByMeter.get(meter.id) || null,
+        avgConsumption7d: avgByMeter.get(meter.id) ?? null,
       };
     }),
   );

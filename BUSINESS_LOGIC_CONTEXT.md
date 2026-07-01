@@ -111,7 +111,7 @@ Các page hiện có:
 - `src/app/electric/overview/page.tsx`
 - `src/app/electric/catalog/page.tsx`
 - `src/app/electric/daily-input/page.tsx`
-- `src/app/electric/daily-input/page.tsx` dùng màn nhập tay vận hành: lọc theo ngày/nhà máy/trạm/nhóm/chế độ, ưu tiên đồng hồ chưa chốt, cho phép nhập MANUAL cho đồng hồ thường và khi AUTO gặp sự cố Gateway/mạng.
+- `src/app/electric/daily-input/page.tsx` dùng màn nhập tay vận hành: lọc theo ngày/nhà máy/trạm/máy biến áp/nhóm/chế độ, ưu tiên đồng hồ chưa chốt, cho phép nhập MANUAL cho đồng hồ thường và khi AUTO gặp sự cố Gateway/mạng. Từ 2026-07-01, đồng hồ hạ thế (type=1) nhập chỉ số trực tiếp trên bảng (inline), hệ thống tự tính Δ kWh real-time và cảnh báo màu (đỏ nếu chỉ số mới < kỳ trước, vàng nếu = 0, cam nếu bất thường so với TB 7 ngày, xanh nếu hợp lệ); đồng hồ trung thế (type=2) vẫn dùng modal chi tiết 3 chỉ số. Có nút "Lưu tất cả" để commit hàng loạt các dòng hợp lệ.
 - `src/app/electric/live/page.tsx`
 - `src/app/electric/live/page.tsx` hỗ trợ lọc đồng hồ AUTO theo Factory/PowerTransformer/PowerMeterGroup, nhưng chỉ đọc realtime một đồng hồ mỗi lần qua `/api/electric/live` để tránh quá tải Gateway/Modbus.
 - `src/app/electric/reports/page.tsx`
@@ -279,3 +279,4 @@ Migrations chính:
 | Ngay | Thay doi | File chinh | Verify |
 | --- | --- | --- | --- |
 | 2026-06-27 | Them danh muc may bien ap va lien ket cay Factory -> Tram -> May bien ap -> Dong ho dien. | `prisma/schema.prisma`, `prisma/migrations/20260627090000_add_power_transformer_units/migration.sql`, `src/app/api/electric/transformer-units/route.ts`, `src/app/api/energy/meters/route.ts`, `src/app/api/electric/daily-status/route.ts`, `src/app/api/electric/reports/route.ts`, `src/components/electric/ElectricClients.tsx` | `npx prisma generate`, `npx prisma migrate dev --name add_power_transformer_units`, `npm run lint`, `npm run build` |
+| 2026-07-01 | Cai tien trang `/electric/daily-input`: cho phep nhap chi so truc tiep tren bang, hien chi so ky truc + TB 7 ngay ngay tren dong, tinh delta kWh real-time, canh bao mau (do/vang/cam/xanh) khi nhap sai/bat thuong, them nut "Luu tat ca". API `daily-status` tra them `lastRecord` va `avgConsumption7d` cho moi dong ho. | `src/app/api/electric/daily-status/route.ts`, `src/components/electric/ElectricClients.tsx` | `npx eslint src/components/electric/ElectricClients.tsx src/app/api/electric/daily-status/route.ts`, `npm run build` |

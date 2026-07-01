@@ -4,15 +4,19 @@ import {
   ApiOutlined,
   ArrowDownOutlined,
   ArrowUpOutlined,
+  CheckCircleOutlined,
   DeleteOutlined,
   DollarOutlined,
   EditOutlined,
+  ExclamationCircleOutlined,
   FireOutlined,
+  InfoCircleOutlined,
   MinusCircleOutlined,
   PlusOutlined,
   ReloadOutlined,
   SaveOutlined,
   ThunderboltOutlined,
+  WarningOutlined,
 } from "@ant-design/icons";
 import {
   Alert,
@@ -130,6 +134,8 @@ type ElectricMeter = {
   transformer?: Transformer | null;
   transformerUnit?: TransformerUnit | null;
   todayRecord?: PowerRecord | null;
+  lastRecord?: PowerRecord | null;
+  avgConsumption7d?: number | null;
 };
 
 type ElectricityPrice = {
@@ -715,6 +721,77 @@ export function ElectricCatalogClient() {
   );
 }
 
+type DailyDraft = {
+  currTotal: string;
+  isReset: boolean;
+  unitPrice: string;
+  note: string;
+};
+
+type DraftEvaluation = {
+  status: "empty" | "error" | "warn" | "high" | "low" | "ok";
+  delta: number;
+  cons: number;
+  message: string;
+};
+
+const DRAFT_ROW_STYLE: Record<DraftEvaluation["status"], React.CSSProperties> = {
+  empty: {},
+  error: { background: "#fff1f0" },
+  warn: { background: "#fffbe6" },
+  high: { background: "#fff7e6" },
+  low: { background: "#e6f4ff" },
+  ok: { background: "#f6ffed" },
+};
+
+function evaluateDraft(meter: ElectricMeter, draft?: DailyDraft): DraftEvaluation {
+  if (!draft || draft.currTotal === "" || draft.currTotal === undefined) {
+    return { status: "empty", delta: 0, cons: 0, message: "Chưa nhập chỉ số" };
+  }
+  const curr = Number(draft.currTotal);
+  if (Number.isNaN(curr)) {
+    return { status: "empty", delta: 0, cons: 0, message: "Giá trị không hợp lệ" };
+  }
+  const prev = Number(meter.lastRecord?.currTotal ?? 0);
+  const delta = draft.isReset ? curr : Math.max(0, curr - prev);
+  const cons = delta * (meter.tu || 1) * (meter.ti || 1);
+  const avg = Number(meter.avgConsumption7d ?? 0);
+  if (!draft.isReset && curr < prev) {
+    return { status: "error", delta, cons, message: "Chỉ số mới nhỏ hơn kỳ trước. Bật Reset nếu đã thay đồng hồ." };
+  }
+  if (cons === 0) {
+    return { status: "warn", delta, cons, message: "Không có tiêu thụ so với kỳ trước." };
+  }
+  if (avg > 0 && cons > avg * 3) {
+    return { status: "high", delta, cons, message: "Cao bất thường so với TB 7 ngày (" + fmtNumber.format(avg) + " kWh)." };
+  }
+  if (avg > 0 && cons < avg * 0.25) {
+    return { status: "low", delta, cons, message: "Thấp bất thường so với TB 7 ngày (" + fmtNumber.format(avg) + " kWh)." };
+  }
+  return { status: "ok", delta, cons, message: "Chênh lệch hợp lệ." };
+}
+
+function DraftStatusChip({ evaluation }: { evaluation: DraftEvaluation }) {
+  if (evaluation.status === "empty") {
+    return <Text type="secondary">---</Text>;
+  }
+  const config: Record<DraftEvaluation["status"], { color: string; icon: React.ReactNode }> = {
+    empty: { color: "default", icon: null },
+    error: { color: "red", icon: <ExclamationCircleOutlined /> },
+    warn: { color: "gold", icon: <WarningOutlined /> },
+    high: { color: "orange", icon: <WarningOutlined /> },
+    low: { color: "blue", icon: <InfoCircleOutlined /> },
+    ok: { color: "green", icon: <CheckCircleOutlined /> },
+  };
+  const { color, icon } = config[evaluation.status];
+  return (
+    <Space direction="vertical" size={0} style={{ lineHeight: 1.2 }}>
+      <Text strong style={{ fontSize: 15 }}>{fmtNumber.format(evaluation.cons)} kWh</Text>
+      <Tag color={color} style={{ margin: 0 }} icon={icon}>{evaluation.message}</Tag>
+    </Space>
+  );
+}
+
 export function ElectricDailyInputClient() {
   const { canEditDaily } = useRole();
   const [selectedDate, setSelectedDate] = useState<Dayjs>(dayjs().subtract(1, "day"));
@@ -731,11 +808,14 @@ export function ElectricDailyInputClient() {
   const [statusFilter, setStatusFilter] = useState<"needsInput" | "all" | "done">("needsInput");
   const [keyword, setKeyword] = useState("");
   const [currentMeter, setCurrentMeter] = useState<ElectricMeter | null>(null);
-  const [currentLastRecord, setCurrentLastRecord] = useState<PowerRecord | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [savingAll, setSavingAll] = useState(false);
+  const [drafts, setDrafts] = useState<Record<string, DailyDraft>>({});
   const [form] = Form.useForm();
   const watchedValues = Form.useWatch([], form) as Record<string, number | boolean | string | undefined> | undefined;
+  const currentLastRecord = currentMeter?.lastRecord ?? null;
 
   useEffect(() => {
     Promise.all([
@@ -773,7 +853,20 @@ export function ElectricDailyInputClient() {
       if (selectedTransformer) params.set("substationId", selectedTransformer);
       if (selectedTransformerUnit) params.set("transformerUnitId", String(selectedTransformerUnit));
       if (!selectedTransformer && selectedFactory) params.set("factoryId", selectedFactory);
-      setMeters(await fetchJson<ElectricMeter[]>("/api/electric/daily-status?" + params.toString()));
+      const nextMeters = await fetchJson<ElectricMeter[]>("/api/electric/daily-status?" + params.toString());
+      setMeters(nextMeters);
+      const nextDrafts: Record<string, DailyDraft> = {};
+      for (const meter of nextMeters) {
+        if (meter.type === 2) continue;
+        const record = meter.todayRecord;
+        nextDrafts[meter.id] = {
+          currTotal: record?.currTotal !== undefined && record?.currTotal !== null ? String(record.currTotal) : "",
+          isReset: record?.isReset ?? false,
+          unitPrice: record?.unitPrice !== undefined && record?.unitPrice !== null ? String(record.unitPrice) : "",
+          note: record?.note ?? "",
+        };
+      }
+      setDrafts(nextDrafts);
     } catch (error) {
       message.error(error instanceof Error ? error.message : "Không tải được trạng thái chốt số");
     } finally {
@@ -785,6 +878,10 @@ export function ElectricDailyInputClient() {
     const timer = window.setTimeout(() => void loadMeters(), 0);
     return () => window.clearTimeout(timer);
   }, [loadMeters]);
+
+  const updateDraft = (meterId: string, patch: Partial<DailyDraft>) => {
+    setDrafts((prev) => ({ ...prev, [meterId]: { ...(prev[meterId] || { currTotal: "", isReset: false, unitPrice: "", note: "" }), ...patch } }));
+  };
 
   const displayedMeters = useMemo(() => meters.filter((meter) => {
     const normalizedKeyword = keyword.trim().toLowerCase();
@@ -803,12 +900,100 @@ export function ElectricDailyInputClient() {
   const manualPending = meters.filter((meter) => !meter.isAuto && !meter.todayRecord).length;
   const autoFallbackPending = meters.filter((meter) => meter.isAuto && !meter.todayRecord).length;
 
-  const openRecord = async (meter: ElectricMeter) => {
+  const readyToSaveCount = useMemo(() => {
+    let count = 0;
+    for (const meter of meters) {
+      if (meter.type === 2) continue;
+      if (meter.todayRecord) continue;
+      const evaluation = evaluateDraft(meter, drafts[meter.id]);
+      if (evaluation.status !== "empty" && evaluation.status !== "error") count += 1;
+    }
+    return count;
+  }, [meters, drafts]);
+
+  const errorCount = useMemo(() => {
+    let count = 0;
+    for (const meter of meters) {
+      if (meter.type === 2) continue;
+      const evaluation = evaluateDraft(meter, drafts[meter.id]);
+      if (evaluation.status === "error") count += 1;
+    }
+    return count;
+  }, [meters, drafts]);
+
+  const persistDraft = useCallback(async (meter: ElectricMeter, draft: DailyDraft) => {
+    await fetchJson("/api/electric/daily-input", postBody("POST", {
+      meterId: meter.id,
+      recordDate: selectedDate.format("YYYY-MM-DD"),
+      prevTotal: Number(meter.lastRecord?.currTotal ?? 0),
+      currTotal: Number(draft.currTotal),
+      isReset: draft.isReset,
+      unitPrice: draft.unitPrice === "" ? undefined : Number(draft.unitPrice),
+      note: draft.note || null,
+    }));
+  }, [selectedDate]);
+
+  const saveInline = async (meter: ElectricMeter) => {
+    const draft = drafts[meter.id];
+    const evaluation = evaluateDraft(meter, draft);
+    if (evaluation.status === "empty") {
+      message.warning("Chưa nhập chỉ số cho " + meter.code);
+      return;
+    }
+    if (evaluation.status === "error") {
+      message.error(evaluation.message);
+      return;
+    }
+    setSavingId(meter.id);
+    try {
+      await persistDraft(meter, draft);
+      message.success("Đã lưu " + meter.code);
+      await loadMeters();
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "Không lưu được");
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const saveAll = async () => {
+    const jobs: Array<{ meter: ElectricMeter; draft: DailyDraft }> = [];
+    for (const meter of meters) {
+      if (meter.type === 2) continue;
+      if (meter.todayRecord) continue;
+      const draft = drafts[meter.id];
+      const evaluation = evaluateDraft(meter, draft);
+      if (evaluation.status === "empty" || evaluation.status === "error") continue;
+      jobs.push({ meter, draft });
+    }
+    if (!jobs.length) {
+      message.warning("Không có đồng hồ nào sẵn sàng lưu");
+      return;
+    }
+    setSavingAll(true);
+    let ok = 0;
+    let fail = 0;
+    for (const job of jobs) {
+      try {
+        await persistDraft(job.meter, job.draft);
+        ok += 1;
+      } catch {
+        fail += 1;
+      }
+    }
+    setSavingAll(false);
+    if (fail) {
+      message.warning("Đã lưu " + ok + "/" + jobs.length + ", lỗi " + fail);
+    } else {
+      message.success("Đã lưu " + ok + " đồng hồ");
+    }
+    await loadMeters();
+  };
+
+  const openRecord = (meter: ElectricMeter) => {
     setCurrentMeter(meter);
-    setCurrentLastRecord(null);
     form.resetFields();
-    const lastRecord = await fetchJson<PowerRecord | null>("/api/electric/last-record?meterId=" + meter.id + "&date=" + selectedDate.format("YYYY-MM-DD"));
-    setCurrentLastRecord(lastRecord);
+    const lastRecord = meter.lastRecord;
     if (meter.type === 2) {
       form.setFieldsValue({
         meterId: meter.id,
@@ -855,15 +1040,15 @@ export function ElectricDailyInputClient() {
 
   return (
     <>
-      <PageTitle title="Nhập chỉ số điện" subtitle="Màn hình nhập tay cho đồng hồ MANUAL và các tình huống AUTO bị mất mạng, đứt cáp hoặc lỗi Gateway." />
+      <PageTitle title="Nhập chỉ số điện" subtitle="Lọc theo nhà máy / trạm / máy biến áp và nhập trực tiếp trên bảng. Hệ thống tự tính kWh, cảnh báo nếu nhập sai." />
 
       <Card style={{ marginBottom: 16 }}>
         <Row gutter={[12, 12]} align="middle">
-          <Col xs={24} md={6} lg={4}><DatePicker value={selectedDate} onChange={(value) => value && setSelectedDate(value)} style={{ width: "100%" }} /></Col>
+          <Col xs={24} md={6} lg={4}><DatePicker value={selectedDate} onChange={(value) => value && setSelectedDate(value)} style={{ width: "100%" }} format="DD/MM/YYYY" /></Col>
           <Col xs={24} md={6} lg={5}><Select allowClear placeholder="Nhà máy" value={selectedFactory} onChange={(value) => { setSelectedFactory(value); setSelectedTransformer(undefined); setSelectedTransformerUnit(undefined); }} options={factories.map((item) => ({ label: item.name, value: item.id }))} style={{ width: "100%" }} /></Col>
           <Col xs={24} md={8} lg={6}><Select allowClear showSearch optionFilterProp="label" placeholder="Trạm biến áp" value={selectedTransformer} onChange={(value) => { setSelectedTransformer(value); setSelectedTransformerUnit(undefined); }} options={filteredTransformers.map((item) => ({ label: item.factory ? item.factory.name + " - " + item.name : item.name, value: item.id }))} style={{ width: "100%" }} /></Col>
           <Col xs={24} md={8} lg={5}><Select allowClear showSearch optionFilterProp="label" placeholder="Máy biến áp" value={selectedTransformerUnit} onChange={setSelectedTransformerUnit} options={filteredDailyTransformerUnits.map((item) => ({ label: item.name, value: item.id }))} style={{ width: "100%" }} /></Col>
-          <Col xs={24} md={4} lg={3}><Button icon={<ReloadOutlined />} onClick={loadMeters} loading={loading} block>Tải</Button></Col>
+          <Col xs={24} md={4} lg={3}><Button icon={<ReloadOutlined />} onClick={loadMeters} loading={loading} block>Tải lại</Button></Col>
           <Col xs={24} lg={6}><Input.Search allowClear placeholder="Tìm mã, tên, serial" value={keyword} onChange={(event) => setKeyword(event.target.value)} /></Col>
         </Row>
         <Row gutter={[12, 12]} style={{ marginTop: 12 }}>
@@ -874,35 +1059,238 @@ export function ElectricDailyInputClient() {
       </Card>
 
       <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
-        <Col xs={24} md={6}><Card><Statistic title="Tổng đồng hồ" value={totalMeters} suffix="đồng hồ" /></Card></Col>
-        <Col xs={24} md={6}><Card><Statistic title="MANUAL chưa chốt" value={manualPending} suffix={"/ " + pendingMeters + " chưa chốt"} valueStyle={{ color: manualPending ? "#cf1322" : "#389e0d" }} /></Card></Col>
-        <Col xs={24} md={6}><Card><Statistic title="Đã chốt" value={doneMeters} suffix={"/ " + totalMeters} /></Card></Col>
-        <Col xs={24} md={6}><Card><Statistic title="AUTO cần dự phòng" value={autoFallbackPending} suffix="đồng hồ" valueStyle={{ color: autoFallbackPending ? "#d46b08" : undefined }} /></Card></Col>
+        <Col xs={12} md={6}><Card><Statistic title="Tổng đồng hồ" value={totalMeters} suffix="đồng hồ" /></Card></Col>
+        <Col xs={12} md={6}><Card><Statistic title="Đã chốt" value={doneMeters} suffix={"/ " + totalMeters} valueStyle={{ color: "#389e0d" }} /></Card></Col>
+        <Col xs={12} md={6}><Card><Statistic title="Chưa chốt" value={pendingMeters} suffix={manualPending + " MANUAL"} valueStyle={{ color: pendingMeters ? "#cf1322" : "#389e0d" }} /></Card></Col>
+        <Col xs={12} md={6}><Card><Statistic title="AUTO cần dự phòng" value={autoFallbackPending} suffix="đồng hồ" valueStyle={{ color: autoFallbackPending ? "#d46b08" : undefined }} /></Card></Col>
       </Row>
 
-      <Alert
-        type={autoFallbackPending ? "warning" : "info"}
-        showIcon
-        style={{ marginBottom: 16 }}
-        message={autoFallbackPending ? "Có đồng hồ AUTO chưa chốt. Nếu Gateway/mạng lỗi, có thể nhập MANUAL tạm thời." : "Ưu tiên nhập các đồng hồ chưa chốt. Dữ liệu MANUAL vẫn được API tính lại tiêu thụ và tiền điện."}
-      />
+      {errorCount > 0 && (
+        <Alert
+          type="error"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message={"Có " + errorCount + " đồng hồ nhập sai (chỉ số mới nhỏ hơn kỳ trước). Vui lòng kiểm tra hoặc bật Reset trước khi lưu."}
+        />
+      )}
+      {autoFallbackPending > 0 && errorCount === 0 && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="Có đồng hồ AUTO chưa chốt. Nếu Gateway hoặc mạng lỗi, có thể nhập MANUAL tạm thời."
+        />
+      )}
+
+      {canEditDaily && (
+        <Card size="small" style={{ marginBottom: 12 }}>
+          <Row justify="space-between" align="middle" gutter={[12, 12]}>
+            <Col>
+              <Space wrap>
+                <Text type="secondary">Hướng dẫn:</Text>
+                <Text>Nhập chỉ số vào ô, hệ thống tự tính chênh lệch kWh và cảnh báo bằng màu.</Text>
+                <Tag color="green">Hợp lệ</Tag>
+                <Tag color="gold">Không tiêu thụ</Tag>
+                <Tag color="orange">Bất thường</Tag>
+                <Tag color="red">Sai</Tag>
+              </Space>
+            </Col>
+            <Col>
+              <Popconfirm
+                title={"Lưu " + readyToSaveCount + " đồng hồ hợp lệ?"}
+                description="Chỉ lưu những dòng đã nhập chỉ số và không có lỗi. Các dòng đã chốt sẽ bị bỏ qua."
+                okText="Lưu tất cả"
+                cancelText="Huỷ"
+                disabled={!readyToSaveCount}
+                onConfirm={() => void saveAll()}
+              >
+                <Button type="primary" icon={<SaveOutlined />} loading={savingAll} disabled={!readyToSaveCount}>
+                  Lưu tất cả ({readyToSaveCount})
+                </Button>
+              </Popconfirm>
+            </Col>
+          </Row>
+        </Card>
+      )}
 
       <Table
         rowKey="id"
         loading={loading}
         dataSource={displayedMeters}
-        pagination={{ pageSize: 12 }}
-        scroll={{ x: 1040 }}
+        pagination={{ pageSize: 15, showSizeChanger: true, pageSizeOptions: [10, 15, 25, 50] }}
+        scroll={{ x: 1280 }}
+        onRow={(record) => {
+          if (record.todayRecord) return { style: { background: "#fafafa" } };
+          if (record.type === 2) return {};
+          const evaluation = evaluateDraft(record, drafts[record.id]);
+          return { style: DRAFT_ROW_STYLE[evaluation.status] };
+        }}
         columns={[
-          { title: "Mã", dataIndex: "code", width: 110, render: (value: string, record: ElectricMeter) => <Space direction="vertical" size={0}><b>{value}</b><Text type="secondary" style={{ fontSize: 12 }}>{record.meterNo || "---"}</Text></Space> },
-          { title: "Tên đồng hồ", dataIndex: "name" },
-          { title: "Khu vực", render: (_: unknown, record: ElectricMeter) => <Space direction="vertical" size={0}><Text>{record.transformer?.factory?.name || "---"}</Text><Text type="secondary" style={{ fontSize: 12 }}>{record.transformer?.name || "---"}</Text><Text type="secondary" style={{ fontSize: 12 }}>{record.transformerUnit?.name || "---"}</Text></Space> },
-          { title: "Nhóm", render: (_: unknown, record: ElectricMeter) => record.group?.name || "---" },
-          { title: "Loại", dataIndex: "type", render: (value: number) => value === 2 ? <Tag color="purple">Trung thế</Tag> : <Tag color="blue">Hạ thế</Tag> },
-          { title: "Chế độ", dataIndex: "isAuto", render: (value: boolean) => <Tag color={value ? "green" : "gold"}>{value ? "AUTO" : "MANUAL"}</Tag> },
-          { title: "Trạng thái", render: (_: unknown, record: ElectricMeter) => record.todayRecord ? <Tag color={record.todayRecord.dataSource === "AUTO" ? "green" : "orange"}>{record.todayRecord.dataSource}</Tag> : <Tag color={record.isAuto ? "volcano" : "red"}>{record.isAuto ? "Cần dự phòng" : "Cần nhập"}</Tag> },
-          { title: "Tiêu thụ", align: "right" as const, render: (_: unknown, record: ElectricMeter) => record.todayRecord ? fmtNumber.format(record.todayRecord.consTotal) + " kWh" : "---" },
-          { title: "Thao tác", width: 150, fixed: "right" as const, render: (_: unknown, record: ElectricMeter) => canEditDaily ? <Button type={!record.todayRecord ? "primary" : "default"} icon={<EditOutlined />} onClick={() => openRecord(record)}>{record.todayRecord ? "Sửa" : "Nhập"}</Button> : null },
+          {
+            title: "Đồng hồ",
+            width: 220,
+            fixed: "left" as const,
+            render: (_: unknown, record: ElectricMeter) => (
+              <Space direction="vertical" size={0}>
+                <b>{record.code}</b>
+                <Text>{record.name}</Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>Serial: {record.meterNo || "---"}</Text>
+              </Space>
+            ),
+          },
+          {
+            title: "Vị trí",
+            width: 170,
+            render: (_: unknown, record: ElectricMeter) => (
+              <Space direction="vertical" size={0} style={{ lineHeight: 1.3 }}>
+                <Text style={{ fontSize: 13 }}>{record.transformer?.factory?.name || "---"}</Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>Trạm: {record.transformer?.name || "---"}</Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>Máy: {record.transformerUnit?.name || "---"}</Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>Nhóm: {record.group?.name || "---"}</Text>
+              </Space>
+            ),
+          },
+          {
+            title: "Loại",
+            width: 100,
+            render: (_: unknown, record: ElectricMeter) => (
+              <Space direction="vertical" size={4}>
+                <Tag color={record.type === 2 ? "purple" : "blue"} style={{ margin: 0 }}>{record.type === 2 ? "Trung thế" : "Hạ thế"}</Tag>
+                <Tag color={record.isAuto ? "green" : "gold"} style={{ margin: 0 }}>{record.isAuto ? "AUTO" : "MANUAL"}</Tag>
+                {(record.tu > 1 || record.ti > 1) && (
+                  <Text type="secondary" style={{ fontSize: 11 }}>TU/TI: {record.tu}/{record.ti}</Text>
+                )}
+              </Space>
+            ),
+          },
+          {
+            title: "Chỉ số kỳ trước",
+            width: 150,
+            render: (_: unknown, record: ElectricMeter) => {
+              const last = record.lastRecord;
+              const avg = record.avgConsumption7d;
+              return (
+                <Space direction="vertical" size={0}>
+                  <Text strong style={{ fontSize: 15 }}>{last ? fmtNumber.format(Number(last.currTotal)) : "---"}</Text>
+                  <Text type="secondary" style={{ fontSize: 12 }}>{last ? dayjs(last.recordDate).format("DD/MM/YYYY") : "Chưa có"}</Text>
+                  {avg && avg > 0 ? (
+                    <Text type="secondary" style={{ fontSize: 11 }}>TB 7 ngày: {fmtNumber.format(avg)} kWh</Text>
+                  ) : null}
+                </Space>
+              );
+            },
+          },
+          {
+            title: "Chỉ số hôm nay",
+            width: 220,
+            render: (_: unknown, record: ElectricMeter) => {
+              if (record.todayRecord) {
+                return (
+                  <Space direction="vertical" size={0}>
+                    <Text strong style={{ fontSize: 15, color: "#389e0d" }}>
+                      {record.type === 2
+                        ? fmtNumber.format(Number(record.todayRecord.currTotal))
+                        : fmtNumber.format(Number(record.todayRecord.currTotal))}
+                    </Text>
+                    <Tag color={record.todayRecord.dataSource === "AUTO" ? "green" : "orange"} style={{ margin: 0 }}>
+                      Đã chốt · {record.todayRecord.dataSource}
+                    </Tag>
+                  </Space>
+                );
+              }
+              if (record.type === 2) {
+                return (
+                  <Button icon={<EditOutlined />} onClick={() => openRecord(record)} disabled={!canEditDaily}>
+                    Nhập 3 chỉ số
+                  </Button>
+                );
+              }
+              const draft = drafts[record.id];
+              return (
+                <Space direction="vertical" size={4} style={{ width: "100%" }}>
+                  <InputNumber
+                    min={0}
+                    placeholder="Nhập chỉ số mới"
+                    style={{ width: "100%" }}
+                    value={draft?.currTotal === "" || draft?.currTotal === undefined ? null : Number(draft.currTotal)}
+                    onChange={(value) => updateDraft(record.id, { currTotal: value === null || value === undefined ? "" : String(value) })}
+                    onPressEnter={() => void saveInline(record)}
+                    disabled={!canEditDaily}
+                    controls={false}
+                  />
+                  <Space size={6}>
+                    <Switch
+                      size="small"
+                      checked={draft?.isReset ?? false}
+                      onChange={(checked) => updateDraft(record.id, { isReset: checked })}
+                      disabled={!canEditDaily}
+                    />
+                    <Text type="secondary" style={{ fontSize: 12 }}>Reset / thay đồng hồ</Text>
+                  </Space>
+                </Space>
+              );
+            },
+          },
+          {
+            title: "Chênh lệch kWh",
+            width: 200,
+            render: (_: unknown, record: ElectricMeter) => {
+              if (record.todayRecord) {
+                return (
+                  <Space direction="vertical" size={0}>
+                    <Text strong style={{ fontSize: 15, color: "#389e0d" }}>
+                      {fmtNumber.format(Number(record.todayRecord.consTotal))} kWh
+                    </Text>
+                    <Text type="secondary" style={{ fontSize: 12 }}>Đã tính</Text>
+                  </Space>
+                );
+              }
+              if (record.type === 2) {
+                return <Text type="secondary">---</Text>;
+              }
+              return <DraftStatusChip evaluation={evaluateDraft(record, drafts[record.id])} />;
+            },
+          },
+          {
+            title: "Thao tác",
+            width: 140,
+            fixed: "right" as const,
+            render: (_: unknown, record: ElectricMeter) => {
+              if (!canEditDaily) return null;
+              if (record.todayRecord) {
+                return (
+                  <Button icon={<EditOutlined />} onClick={() => openRecord(record)} size="small">Sửa</Button>
+                );
+              }
+              if (record.type === 2) {
+                return null;
+              }
+              const evaluation = evaluateDraft(record, drafts[record.id]);
+              return (
+                <Space direction="vertical" size={4} style={{ width: "100%" }}>
+                  <Button
+                    type="primary"
+                    icon={<SaveOutlined />}
+                    size="small"
+                    block
+                    loading={savingId === record.id}
+                    disabled={evaluation.status === "empty" || evaluation.status === "error"}
+                    onClick={() => void saveInline(record)}
+                  >
+                    Lưu
+                  </Button>
+                  <Button
+                    size="small"
+                    block
+                    icon={<EditOutlined />}
+                    onClick={() => openRecord(record)}
+                  >
+                    Chi tiết
+                  </Button>
+                </Space>
+              );
+            },
+          },
         ]}
       />
 
@@ -911,7 +1299,7 @@ export function ElectricDailyInputClient() {
           {currentMeter?.isAuto ? <Alert type="warning" showIcon style={{ marginBottom: 12 }} message="Đồng hồ AUTO chỉ nên nhập tay khi mạng, cáp hoặc Gateway gặp sự cố." /> : null}
           <Form.Item name="meterId" hidden><Input /></Form.Item>
           <Row gutter={12} style={{ marginBottom: 12 }}>
-            <Col xs={24} md={8}><Card size="small"><Statistic title="Kỳ trước" value={currentMeter?.type === 2 ? (currentLastRecord?.recordDate ? dayjs(currentLastRecord.recordDate).format("DD/MM/YYYY") : "---") : (currentLastRecord?.currTotal ?? 0)} suffix={currentMeter?.type === 2 ? undefined : "kWh"} /></Card></Col>
+            <Col xs={24} md={8}><Card size="small"><Statistic title="Kỳ trước" value={currentMeter?.type === 2 ? (currentLastRecord?.recordDate ? dayjs(currentLastRecord.recordDate).format("DD/MM/YYYY") : "---") : (Number(currentLastRecord?.currTotal ?? 0))} suffix={currentMeter?.type === 2 ? undefined : "kWh"} /></Card></Col>
             <Col xs={24} md={8}><Card size="small"><Statistic title="TU/TI" value={(currentMeter?.tu || 1) + " / " + (currentMeter?.ti || 1)} /></Card></Col>
             <Col xs={24} md={8}><Card size="small"><Statistic title="Ước tính" value={currentMeter?.type === 2 ? mediumVoltageDelta : lowVoltageDelta} precision={2} suffix="kWh" /></Card></Col>
           </Row>
@@ -919,9 +1307,9 @@ export function ElectricDailyInputClient() {
             <>
               <Alert type="info" showIcon style={{ marginBottom: 12 }} message="Đồng hồ trung thế: nhập 3 chỉ số hiển thị trên mặt đồng hồ. Hệ thống sẽ tính lại theo đơn giá từng khung giờ." />
               <Row gutter={12}>
-                <Col xs={24} md={8}><Form.Item name="currNormal" label="Chỉ số Bình thường" rules={[{ required: true }]}><InputNumber min={0} style={{ width: "100%" }} /></Form.Item><Text type="secondary">Trước: {fmtNumber.format(currentLastRecord?.currNormal || 0)}</Text></Col>
-                <Col xs={24} md={8}><Form.Item name="currPeak" label="Chỉ số Cao điểm" rules={[{ required: true }]}><InputNumber min={0} style={{ width: "100%" }} /></Form.Item><Text type="secondary">Trước: {fmtNumber.format(currentLastRecord?.currPeak || 0)}</Text></Col>
-                <Col xs={24} md={8}><Form.Item name="currOffPeak" label="Chỉ số Thấp điểm" rules={[{ required: true }]}><InputNumber min={0} style={{ width: "100%" }} /></Form.Item><Text type="secondary">Trước: {fmtNumber.format(currentLastRecord?.currOffPeak || 0)}</Text></Col>
+                <Col xs={24} md={8}><Form.Item name="currNormal" label="Chỉ số Bình thường" rules={[{ required: true }]}><InputNumber min={0} style={{ width: "100%" }} /></Form.Item><Text type="secondary">Trước: {fmtNumber.format(Number(currentLastRecord?.currNormal || 0))}</Text></Col>
+                <Col xs={24} md={8}><Form.Item name="currPeak" label="Chỉ số Cao điểm" rules={[{ required: true }]}><InputNumber min={0} style={{ width: "100%" }} /></Form.Item><Text type="secondary">Trước: {fmtNumber.format(Number(currentLastRecord?.currPeak || 0))}</Text></Col>
+                <Col xs={24} md={8}><Form.Item name="currOffPeak" label="Chỉ số Thấp điểm" rules={[{ required: true }]}><InputNumber min={0} style={{ width: "100%" }} /></Form.Item><Text type="secondary">Trước: {fmtNumber.format(Number(currentLastRecord?.currOffPeak || 0))}</Text></Col>
               </Row>
             </>
           ) : (
