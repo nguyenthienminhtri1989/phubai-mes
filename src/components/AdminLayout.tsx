@@ -12,6 +12,7 @@ import {
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  MobileOutlined,
   TeamOutlined,
   ThunderboltFilled,
   ThunderboltOutlined,
@@ -95,6 +96,7 @@ const pageTitle: Record<string, { label: string; icon: ReactNode }> = {
     icon: <DatabaseOutlined />,
   },
   "/electric/users": { label: "Quản lý người dùng", icon: <TeamOutlined /> },
+  "/mobile/daily-input": { label: "Nhập số (Mobile)", icon: <MobileOutlined /> },
 };
 
 // ─── Sidebar menu items ───────────────────────────────────────────────────────
@@ -156,6 +158,18 @@ function buildMenuItems(role?: string): MenuProps["items"] {
           key: "/electric/catalog",
           icon: <DatabaseOutlined />,
           label: "Danh mục điện năng",
+        },
+      ],
+    },
+    {
+      key: "group-mobile",
+      label: "MOBILE",
+      type: "group",
+      children: [
+        {
+          key: "/mobile/daily-input",
+          icon: <MobileOutlined />,
+          label: "Nhập số (Mobile)",
         },
       ],
     },
