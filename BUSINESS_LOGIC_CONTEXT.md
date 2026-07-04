@@ -200,7 +200,7 @@ Migrations chính:
 - `PowerRecord` là dữ liệu chốt ngày.
 - `dataSource = AUTO` do cron ghi.
 - `dataSource = MANUAL` do người dùng nhập/chốt trên UI.
-- Cron chốt số lúc 08:00 sáng giờ Việt Nam (`Asia/Ho_Chi_Minh`).
+- Cron chốt số lúc 06:00 sáng giờ Việt Nam (`Asia/Ho_Chi_Minh`); giờ chốt gom trong hằng số `CLOSING_HOUR` tại `scripts/energy-cron.js`, đồng bộ cho cả lịch cron và cửa sổ tách khung giá 24h.
 - Ngày chốt phải xử lý cẩn thận timezone Việt Nam để không lệch ngày.
 - Unique theo `(recordDate, meterId)`.
 
@@ -293,3 +293,23 @@ Migrations chính:
 | 2026-06-27 | Them danh muc may bien ap va lien ket cay Factory -> Tram -> May bien ap -> Dong ho dien. | `prisma/schema.prisma`, `prisma/migrations/20260627090000_add_power_transformer_units/migration.sql`, `src/app/api/electric/transformer-units/route.ts`, `src/app/api/energy/meters/route.ts`, `src/app/api/electric/daily-status/route.ts`, `src/app/api/electric/reports/route.ts`, `src/components/electric/ElectricClients.tsx` | `npx prisma generate`, `npx prisma migrate dev --name add_power_transformer_units`, `npm run lint`, `npm run build` |
 | 2026-07-01 | Cai tien trang `/electric/daily-input`: cho phep nhap chi so truc tiep tren bang, hien chi so ky truc + TB 7 ngay ngay tren dong, tinh delta kWh real-time, canh bao mau (do/vang/cam/xanh) khi nhap sai/bat thuong, them nut "Luu tat ca". API `daily-status` tra them `lastRecord` va `avgConsumption7d` cho moi dong ho. | `src/app/api/electric/daily-status/route.ts`, `src/components/electric/ElectricClients.tsx` | `npx eslint src/components/electric/ElectricClients.tsx src/app/api/electric/daily-status/route.ts`, `npm run build` |
 | 2026-07-01 | Them trang nhap lieu mobile `/mobile/daily-input` voi layout rieng (an sidebar, header gon + nut Home), giao dien card doc toi uu cho dien thoai, bo loc an/hien, progress bar, luu tung dong hoac luu tat ca. Them nhom MOBILE vao sidebar AdminLayout. | `src/app/mobile/layout.tsx`, `src/app/mobile/daily-input/page.tsx`, `src/components/mobile/MobileDailyInputClient.tsx`, `src/components/AdminLayout.tsx` | `npm run lint`, `npm run build`, truy cap `/mobile/daily-input` tren trinh duyet mobile |
+| 2026-07-02 | Doi gio chot so dien nang tu 08:00 sang 06:00 gio Viet Nam; gom vao hang so `CLOSING_HOUR` dung chung cho lich cron va cua so tach khung gia 24h (06:00 hom truoc -> 06:00 hom nay). | `scripts/energy-cron.js`, `BUSINESS_LOGIC_CONTEXT.md` | `node --check scripts/energy-cron.js`, `pm2 restart phubai-mes-energy-cron`, `npm run energy:cron -- --close-once` |
+
+## 2026-07-04 - Chuyen giao dien PHUBAI-MES sang Light theme
+
+### Current State Update
+
+- App shell desktop `AdminLayout` va mobile layout da chuyen tu Ant Design dark algorithm sang default light algorithm.
+- Palette chinh dung nen sang `#f5f7fb` / card trang, chu chinh `#172033`, chu phu `#526174`, border xam xanh nhat de dam bao do tuong phan khi xem tren nen sang.
+- Cac diem hard-code dark trong mobile daily input va live meter card da duoc dieu chinh de dong bo Light theme.
+
+### Business Rules Update
+
+- Khong thay doi schema, API, cong thuc tinh dien, cron, quyen han, hay namespace `/electric`.
+- Thay doi chi anh huong presentation layer: shell, sidebar, header, card/table/input tokens va mot so mau cuc bo trong UI.
+
+### Feature Ledger Update
+
+| Ngay | Thay doi | File chinh | Verify |
+| --- | --- | --- | --- |
+| 2026-07-04 | Chuyen giao dien PHUBAI-MES tu Dark sang Light theme, giu contrast chu va cac trang dien nang/mobile de thao tac de doc hon. | `src/components/AdminLayout.tsx`, `src/app/mobile/layout.tsx`, `src/components/mobile/MobileDailyInputClient.tsx`, `src/components/electric/ElectricClients.tsx` | `npx eslint src/components/AdminLayout.tsx src/app/mobile/layout.tsx src/components/mobile/MobileDailyInputClient.tsx src/components/electric/ElectricClients.tsx`, `npm run build` |

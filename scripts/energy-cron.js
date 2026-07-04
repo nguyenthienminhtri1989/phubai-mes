@@ -14,6 +14,10 @@ if (!connectionString) {
 const pool = new Pool({ connectionString });
 let keepProcessAlive = false;
 
+// Giờ chốt số điện năng hằng ngày (giờ Việt Nam, hệ 24h). Đổi giá trị này để thay đổi
+// thời điểm chốt số; giá trị này đồng bộ cho cả lịch cron và cửa sổ tách khung giá 24h.
+const CLOSING_HOUR = 6;
+
 function newId(prefix) {
   return `${prefix}_${crypto.randomUUID()}`;
 }
@@ -31,8 +35,8 @@ function yesterdayAtVietnamMidnight() {
   return new Date(`${yesterday.toISOString().slice(0, 10)}T12:00:00.000+07:00`);
 }
 
-// Cung 1 "ngay" voi recordDate (anchor noon +07:00) nhung tra ve thoi diem 08:00 VN cua ngay do,
-// dung de xac dinh dung cua so chot so 24h (08:00 hom truoc -> 08:00 hom nay).
+// Cùng 1 "ngày" với recordDate (mốc giữa trưa +07:00) nhưng trả về thời điểm CLOSING_HOUR VN của ngày đó,
+// dùng để xác định đúng cửa sổ chốt số 24h (ví dụ 06:00 hôm trước -> 06:00 hôm nay).
 function vnDateAtHour(noonAnchor, hour) {
   const dateStr = noonAnchor.toISOString().slice(0, 10);
   return new Date(`${dateStr}T${String(hour).padStart(2, "0")}:00:00.000+07:00`);
@@ -78,9 +82,9 @@ async function getActiveTariffRanges() {
 }
 
 /**
- * Tach tong san luong tieu thu giua cac lan doc telemetry lien tiep (cach nhau ~1 gio) thanh
- * 3 khung gia, theo ty le phut giao nhau voi bieu khung gio dang active. Tra ve null neu khong
- * du du lieu (chua co bieu khung gio active, hoac it hon 2 lan doc trong cua so chot so).
+ * Tách tổng sản lượng tiêu thụ giữa các lần đọc telemetry liên tiếp (cách nhau ~1 giờ) thành
+ * 3 khung giá, theo tỷ lệ phút giao nhau với biểu khung giờ đang active. Trả về null nếu không
+ * đủ dữ liệu (chưa có biểu khung giờ active, hoặc ít hơn 2 lần đọc trong cửa sổ chốt số).
  */
 function splitTelemetryByTariff(ranges, readings) {
   if (ranges.length === 0 || readings.length < 2) return null;
@@ -90,7 +94,7 @@ function splitTelemetryByTariff(ranges, readings) {
     const prev = readings[i - 1];
     const curr = readings[i];
     const delta = Number(curr.totalEnergy) - Number(prev.totalEnergy);
-    if (delta <= 0) continue; // bo qua khoang co reset/giam
+    if (delta <= 0) continue; // Bỏ qua khoảng có reset/giảm
 
     const prevTs = new Date(prev.timestamp);
     const currTs = new Date(curr.timestamp);
@@ -203,12 +207,12 @@ async function collectTelemetry() {
 
 async function closeDailyRecords() {
   console.log(`
-[${nowVN()}] Bat dau chot so dien nang luc 08:00...`);
+[${nowVN()}] Bat dau chot so dien nang luc ${String(CLOSING_HOUR).padStart(2, "0")}:00...`);
 
   const recordDate = yesterdayAtVietnamMidnight();
-  const windowStart = vnDateAtHour(recordDate, 8);
-  const windowEnd = vnDateAtHour(recordDate, 8);
-  windowEnd.setDate(windowEnd.getDate() + 1); // 08:00 hom nay (ket thuc cua so chot so 24h)
+  const windowStart = vnDateAtHour(recordDate, CLOSING_HOUR);
+  const windowEnd = vnDateAtHour(recordDate, CLOSING_HOUR);
+  windowEnd.setDate(windowEnd.getDate() + 1); // CLOSING_HOUR giờ hôm nay (kết thúc cửa sổ chốt số 24h)
 
   const autoMeters = await getAutoMeters(false);
   const priceRows = await pool.query('select "type", "price" from "ElectricityPrice"');
@@ -248,8 +252,8 @@ async function closeDailyRecords() {
     const ti = Number(meter.ti ?? 1);
     const consTotal = delta * tu * ti;
 
-    // Dong ho Ha the (type=1) doc AUTO theo gio: tach tieu thu theo 3 khung gia tu hourly telemetry
-    // trong cua so chot so 08:00 hom truoc -> 08:00 hom nay, dua tren bieu khung gio dang active.
+    // Đồng hồ Hạ thế (type=1) đọc AUTO theo giờ: tách tiêu thụ theo 3 khung giá từ hourly telemetry
+    // trong cửa sổ chốt số CLOSING_HOUR hôm trước -> CLOSING_HOUR hôm nay, dựa trên biểu khung giờ đang active.
     let consNormal = null;
     let consPeak = null;
     let consOffPeak = null;
@@ -376,12 +380,12 @@ async function main() {
     timezone: "Asia/Ho_Chi_Minh",
   });
 
-  cron.schedule("0 8 * * *", closeDailyRecords, {
+  cron.schedule(`0 ${CLOSING_HOUR} * * *`, closeDailyRecords, {
     scheduled: true,
     timezone: "Asia/Ho_Chi_Minh",
   });
 
-  console.log("Energy cron da khoi dong. Thu thap moi gio, chot so luc 08:00 gio Viet Nam.");
+  console.log(`Energy cron da khoi dong. Thu thap moi gio, chot so luc ${String(CLOSING_HOUR).padStart(2, "0")}:00 gio Viet Nam.`);
 }
 
 main()

@@ -117,7 +117,7 @@ function evaluate(meter: ElectricMeter, draft?: DailyDraft): { status: DraftStat
 }
 
 const STATUS_BORDER: Record<DraftStatus, string> = {
-  empty: "rgba(0,208,255,0.1)",
+  empty: "#b6dcff",
   error: "#ef4444",
   warn: "#f5a623",
   high: "#f97316",
@@ -300,7 +300,7 @@ export function MobileDailyInputClient() {
     <div style={{ maxWidth: 480, margin: "0 auto" }}>
       {/* Title */}
       <div style={{ marginBottom: 10 }}>
-        <Title level={4} style={{ margin: 0, color: "#e2e8f0", fontSize: 18 }}>Nhập chỉ số điện</Title>
+        <Title level={4} style={{ margin: 0, color: "#172033", fontSize: 18 }}>Nhập chỉ số điện</Title>
         <Text type="secondary" style={{ fontSize: 12 }}>Giao diện tối ưu cho điện thoại</Text>
       </div>
 
@@ -396,12 +396,12 @@ export function MobileDailyInputClient() {
             )}
           </Col>
         </Row>
-        <div style={{ height: 6, background: "#1a2235", borderRadius: 3, marginTop: 6 }}>
+        <div style={{ height: 6, background: "#e8eef6", borderRadius: 3, marginTop: 6 }}>
           <div
             style={{
               height: "100%",
               width: totalMeters ? (doneCount / totalMeters * 100) + "%" : "0%",
-              background: "linear-gradient(90deg, #10b981, #00d0ff)",
+              background: "linear-gradient(90deg, #10b981, #006dcb)",
               borderRadius: 3,
               transition: "width 0.3s",
             }}
@@ -481,7 +481,7 @@ export function MobileDailyInputClient() {
                     {meter.isAuto ? "AUTO" : "MANUAL"}
                   </Tag>
                   {(meter.tu > 1 || meter.ti > 1) && (
-                    <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>
+                    <div style={{ fontSize: 11, color: "#526174", marginTop: 2 }}>
                       TU/TI: {meter.tu}/{meter.ti}
                     </div>
                   )}
@@ -489,7 +489,7 @@ export function MobileDailyInputClient() {
               </Row>
 
               {/* Location info */}
-              <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 8, lineHeight: 1.4 }}>
+              <div style={{ fontSize: 12, color: "#526174", marginBottom: 8, lineHeight: 1.4 }}>
                 {meter.transformer?.factory?.name || "---"} / {meter.transformer?.name || "---"}
                 {meter.transformerUnit ? " / " + meter.transformerUnit.name : ""}
               </div>
@@ -516,7 +516,7 @@ export function MobileDailyInputClient() {
                   {/* Previous reading info */}
                   <div
                     style={{
-                      background: "rgba(0,208,255,0.05)",
+                      background: "#e8f3ff",
                       borderRadius: 8,
                       padding: "6px 10px",
                       marginBottom: 8,

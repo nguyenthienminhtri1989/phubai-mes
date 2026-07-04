@@ -1470,7 +1470,7 @@ export function ElectricLiveClient() {
       ) : (
         <Row gutter={[16, 16]}>
           <Col xs={24} lg={12}>
-            <Card style={{ background: "#0d1117", borderColor: "#0d1117" }} styles={{ body: { padding: 20 } }}>
+            <Card style={{ background: "#f8fafc", borderColor: "#dbe5f0" }} styles={{ body: { padding: 20 } }}>
               <MeterFace value={displayValue} online={!!liveData} label={(meter?.code || "") + " - " + (meter?.name || "")} />
             </Card>
           </Col>

@@ -38,24 +38,24 @@ import { ChangePasswordModal } from "./electric/ChangePasswordModal";
 
 // ─── Theme tokens ────────────────────────────────────────────────────────────
 const COLORS = {
-  bg: "#0a0e17",
-  siderBg: "#0d1220",
-  siderBorder: "rgba(0,208,255,0.08)",
-  headerBg: "rgba(13,18,32,0.95)",
-  accent: "#00d0ff",
-  accentGlow: "rgba(0,208,255,0.25)",
-  accentDim: "rgba(0,208,255,0.12)",
-  gold: "#f5a623",
-  goldGlow: "rgba(245,166,35,0.3)",
-  text: "#e2e8f0",
-  textMuted: "#64748b",
-  textDim: "#334155",
+  bg: "#f5f7fb",
+  siderBg: "#ffffff",
+  siderBorder: "#dbe5f0",
+  headerBg: "rgba(255,255,255,0.96)",
+  accent: "#006dcb",
+  accentGlow: "rgba(0,109,203,0.16)",
+  accentDim: "#e8f3ff",
+  gold: "#b7791f",
+  goldGlow: "rgba(183,121,31,0.18)",
+  text: "#172033",
+  textMuted: "#526174",
+  textDim: "#7b8794",
   success: "#10b981",
-  danger: "#ef4444",
-  menuHover: "rgba(0,208,255,0.07)",
-  menuSelected: "rgba(0,208,255,0.14)",
-  menuSelectedBorder: "#00d0ff",
-  groupLabel: "rgba(100,116,139,0.6)",
+  danger: "#d92d20",
+  menuHover: "#eef6ff",
+  menuSelected: "#dff0ff",
+  menuSelectedBorder: "#006dcb",
+  groupLabel: "#7b8794",
 };
 
 // ─── Role helpers ─────────────────────────────────────────────────────────────
@@ -352,7 +352,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
           textDecoration: "none",
           overflow: "hidden",
           borderBottom: `1px solid ${COLORS.siderBorder}`,
-          background: "rgba(0,208,255,0.04)",
+          background: COLORS.accentDim,
           transition: "padding 0.2s",
           justifyContent: collapsed ? "center" : "flex-start",
         }}
@@ -378,7 +378,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
               style={{
                 fontWeight: 800,
                 fontSize: 14,
-                color: "#fff",
+                color: COLORS.text,
                 letterSpacing: 0.5,
                 lineHeight: 1.1,
                 whiteSpace: "nowrap",
@@ -454,7 +454,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
             margin: "0 12px 10px",
             padding: "10px 12px",
             borderRadius: 8,
-            background: "rgba(0,208,255,0.04)",
+            background: "#f8fafc",
             border: `1px solid ${COLORS.siderBorder}`,
             textAlign: "center",
           }}
@@ -497,7 +497,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
             width: 36,
             height: 36,
             borderRadius: 8,
-            background: "rgba(0,208,255,0.04)",
+            background: "#f8fafc",
             border: `1px solid ${COLORS.siderBorder}`,
             display: "flex",
             alignItems: "center",
@@ -556,17 +556,17 @@ export function AdminLayout({ children }: AdminLayoutProps) {
   return (
     <ConfigProvider
       theme={{
-        algorithm: theme.darkAlgorithm,
+        algorithm: theme.defaultAlgorithm,
         token: {
           colorBgBase: COLORS.bg,
-          colorBgContainer: "#111827",
-          colorBgElevated: "#1a2235",
+          colorBgContainer: "#ffffff",
+          colorBgElevated: "#ffffff",
           colorBgLayout: COLORS.bg,
-          colorBorder: "rgba(0,208,255,0.12)",
-          colorBorderSecondary: "rgba(0,208,255,0.07)",
+          colorBorder: COLORS.siderBorder,
+          colorBorderSecondary: "#e6edf5",
           colorText: COLORS.text,
-          colorTextSecondary: "#94a3b8",
-          colorTextTertiary: "#64748b",
+          colorTextSecondary: COLORS.textMuted,
+          colorTextTertiary: COLORS.textDim,
           colorPrimary: COLORS.accent,
           colorLink: COLORS.accent,
           colorSuccess: COLORS.success,
@@ -577,56 +577,56 @@ export function AdminLayout({ children }: AdminLayoutProps) {
         },
         components: {
           Card: {
-            colorBgContainer: "#111827",
-            colorBorderSecondary: "rgba(0,208,255,0.1)",
+            colorBgContainer: "#ffffff",
+            colorBorderSecondary: "#e6edf5",
           },
           Table: {
-            colorBgContainer: "#111827",
-            headerBg: "#0d1220",
-            rowHoverBg: "rgba(0,208,255,0.04)",
-            borderColor: "rgba(0,208,255,0.08)",
+            colorBgContainer: "#ffffff",
+            headerBg: "#f1f5f9",
+            rowHoverBg: "#f7fbff",
+            borderColor: "#e6edf5",
           },
           Modal: {
-            contentBg: "#111827",
-            headerBg: "#0d1220",
+            contentBg: "#ffffff",
+            headerBg: "#ffffff",
           },
           Tabs: {
             colorBgContainer: "transparent",
           },
           Select: {
-            colorBgContainer: "#1a2235",
-            colorBgElevated: "#1a2235",
+            colorBgContainer: "#ffffff",
+            colorBgElevated: "#ffffff",
           },
           DatePicker: {
-            colorBgContainer: "#1a2235",
-            colorBgElevated: "#1a2235",
+            colorBgContainer: "#ffffff",
+            colorBgElevated: "#ffffff",
           },
           Input: {
-            colorBgContainer: "#1a2235",
+            colorBgContainer: "#ffffff",
           },
           InputNumber: {
-            colorBgContainer: "#1a2235",
+            colorBgContainer: "#ffffff",
           },
           Segmented: {
-            trackBg: "#0d1220",
-            itemSelectedBg: "#1a2235",
-            itemColor: "#94a3b8",
+            trackBg: "#e8eef6",
+            itemSelectedBg: "#ffffff",
+            itemColor: COLORS.textMuted,
             itemSelectedColor: COLORS.accent,
           },
           Dropdown: {
-            colorBgElevated: "#1a2235",
+            colorBgElevated: "#ffffff",
           },
           Tooltip: {
-            colorBgSpotlight: "#1a2235",
+            colorBgSpotlight: "#172033",
           },
           Statistic: {
-            colorTextDescription: "#94a3b8",
+            colorTextDescription: COLORS.textMuted,
           },
           Alert: {
-            colorInfoBg: "rgba(0,208,255,0.08)",
-            colorInfoBorder: "rgba(0,208,255,0.2)",
-            colorWarningBg: "rgba(245,166,35,0.1)",
-            colorWarningBorder: "rgba(245,166,35,0.3)",
+            colorInfoBg: "#e8f3ff",
+            colorInfoBorder: "#b6dcff",
+            colorWarningBg: "#fff7e6",
+            colorWarningBorder: "#ffe0a3",
           },
         },
       }}
@@ -644,7 +644,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
         * { box-sizing: border-box; }
         ::-webkit-scrollbar { width: 4px; height: 4px; }
         ::-webkit-scrollbar-track { background: ${COLORS.bg}; }
-        ::-webkit-scrollbar-thumb { background: ${COLORS.textDim}; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #b7c3d0; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: ${COLORS.textMuted}; }
         .ant-menu-item-group-title {
           font-size: 10px !important;
@@ -719,7 +719,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
               style={{
                 position: "absolute",
                 inset: 0,
-                background: "rgba(0,0,0,0.7)",
+                background: "rgba(15,23,42,0.32)",
                 backdropFilter: "blur(4px)",
               }}
               onClick={() => setMobileOpen(false)}
@@ -957,8 +957,8 @@ export function AdminLayout({ children }: AdminLayoutProps) {
                 pointerEvents: "none",
                 zIndex: 0,
                 backgroundImage: `
-                  linear-gradient(rgba(0,208,255,0.025) 1px, transparent 1px),
-                  linear-gradient(90deg, rgba(0,208,255,0.025) 1px, transparent 1px)
+                  linear-gradient(rgba(0,109,203,0.04) 1px, transparent 1px),
+                  linear-gradient(90deg, rgba(0,109,203,0.04) 1px, transparent 1px)
                 `,
                 backgroundSize: "40px 40px",
               }}
