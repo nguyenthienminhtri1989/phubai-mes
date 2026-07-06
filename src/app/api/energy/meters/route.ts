@@ -3,6 +3,7 @@ import { requireCatalogManager } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 
 const meterInclude = {
+  factory: true,
   group: true,
   transformer: {
     include: {
@@ -37,13 +38,15 @@ async function meterData(body: Record<string, unknown>) {
     : null;
 
   const isAuto = body.isAuto === true;
+  const meterType = Number(body.type || 1);
 
   return {
     code: String(body.code || "").trim(),
     name: String(body.name || "").trim(),
     meterNo: toNullableString(body.meterNo),
-    transformerId: unit?.transformerId || toNullableString(body.transformerId),
-    transformerUnitId,
+    factoryId: meterType === 2 ? toNullableString(body.factoryId) : null,
+    transformerId: meterType === 2 ? null : (unit?.transformerId || toNullableString(body.transformerId)),
+    transformerUnitId: meterType === 2 ? null : transformerUnitId,
     groupId: toNullableString(body.groupId),
     isActive: body.isActive !== false,
     type: Number(body.type || 1),

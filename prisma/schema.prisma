@@ -47,6 +47,7 @@ model Factory {
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
   transformers PowerTransformer[]
+  meters        PowerMeter[]
 
   @@index([isActive])
 }
@@ -110,6 +111,7 @@ model PowerMeter {
   code          String            @unique
   name          String
   meterNo       String?
+  factoryId         String?
   transformerId     String?
   transformerUnitId Int?
   groupId           String?
@@ -125,12 +127,14 @@ model PowerMeter {
   note          String?
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
+  factory       Factory?              @relation(fields: [factoryId], references: [id], onDelete: SetNull)
   group         PowerMeterGroup?  @relation(fields: [groupId], references: [id], onDelete: SetNull)
   transformer     PowerTransformer?     @relation(fields: [transformerId], references: [id], onDelete: SetNull)
   transformerUnit PowerTransformerUnit? @relation(fields: [transformerUnitId], references: [id], onDelete: SetNull)
   records       PowerRecord[]
   telemetry     PowerTelemetry[]
 
+  @@index([factoryId])
   @@index([groupId])
   @@index([transformerId])
   @@index([transformerUnitId])

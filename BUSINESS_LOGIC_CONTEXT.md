@@ -313,3 +313,39 @@ Migrations chính:
 | Ngay | Thay doi | File chinh | Verify |
 | --- | --- | --- | --- |
 | 2026-07-04 | Chuyen giao dien PHUBAI-MES tu Dark sang Light theme, giu contrast chu va cac trang dien nang/mobile de thao tac de doc hon. | `src/components/AdminLayout.tsx`, `src/app/mobile/layout.tsx`, `src/components/mobile/MobileDailyInputClient.tsx`, `src/components/electric/ElectricClients.tsx` | `npx eslint src/components/AdminLayout.tsx src/app/mobile/layout.tsx src/components/mobile/MobileDailyInputClient.tsx src/components/electric/ElectricClients.tsx`, `npm run build` |
+
+## 2026-07-06 - Fix electric runtime 500 and realtime API contract
+
+### Current State Update
+
+- Ran `npx prisma generate` after schema/API changes so generated Prisma Client includes current electric fields such as `PowerMeter.factoryId` and `PowerMeter.transformerUnitId`.
+- Hardened `/api/electric/live`: missing `meterId` now returns 400, unknown meter returns 404, and meters not configured for AUTO realtime return 400 instead of Prisma/runtime 500.
+- `/api/electric/live` success payload now includes top-level `timestamp`, `totalEnergy`, voltage/current/power fields, `meter`, and `telemetry`, matching `ElectricLiveClient` expectations while keeping telemetry available.
+
+### Business Rules Update
+
+- Realtime remains one selected AUTO meter per request; the API must not try Modbus/agent reads when no meter is selected or the meter is not configured for AUTO.
+
+### Feature Ledger Update
+
+| Ngay | Thay doi | File chinh | Verify |
+| --- | --- | --- | --- |
+| 2026-07-06 | Sua loi runtime sau khi Prisma Client lech schema va lam `/api/electric/live` tra loi ro rang khi thieu/chua dung `meterId`, dong thoi tra payload dung cho UI realtime. | `src/app/api/electric/live/route.ts`, `src/generated/prisma/*` (generated, gitignored), `BUSINESS_LOGIC_CONTEXT.md` | `npx prisma generate`, `npx prisma migrate status`, `npx eslint src/app/api/electric/live/route.ts src/app/api/electric/daily-status/route.ts src/components/electric/ElectricClients.tsx src/components/electric/MvDailyInputClient.tsx src/components/mobile/MobileDailyInputClient.tsx`, `npm run build`, HTTP smoke `/electric/catalog`, `/electric/daily-input`, `/electric/daily-mv`, `/electric/live`, `/mobile/daily-input` |
+
+## 2026-07-06 - Add missing PowerMeter factory migration
+
+### Current State Update
+
+- Added migration `20260706090000_add_power_meter_factory_id` because `prisma/schema.prisma` and generated Prisma Client expected `PowerMeter.factoryId`, but the live PostgreSQL table did not have that column.
+- Migration adds nullable `PowerMeter.factoryId`, backfills it from `PowerTransformer.factoryId` for meters that already have `transformerId`, then creates `PowerMeter_factoryId_idx` and `PowerMeter_factoryId_fkey`.
+- This fixes Prisma P2022 `The column PowerMeter.factoryId does not exist in the current database` on `/api/electric/meters` and `/api/electric/daily-status`, which affected `/electric/catalog`, `/electric/daily-input`, `/electric/daily-mv`, and `/mobile/daily-input`.
+
+### Business Rules Update
+
+- `PowerMeter.factoryId` remains a compatibility/direct filter field, especially for medium-voltage meters; low-voltage meters can still derive factory through `PowerMeter.transformerId -> PowerTransformer.factoryId`.
+
+### Feature Ledger Update
+
+| Ngay | Thay doi | File chinh | Verify |
+| --- | --- | --- | --- |
+| 2026-07-06 | Them migration bo sung cot `PowerMeter.factoryId` con thieu trong DB, backfill tu tram bien ap, sua loi P2022 tren API meters/daily-status. | `prisma/migrations/20260706090000_add_power_meter_factory_id/migration.sql`, `BUSINESS_LOGIC_CONTEXT.md` | `npx prisma migrate deploy`, `npx prisma migrate status`, `npx prisma generate`, `npx eslint src/app/api/energy/meters/route.ts src/app/api/electric/daily-status/route.ts src/app/api/electric/live/route.ts src/components/electric/ElectricClients.tsx src/components/electric/MvDailyInputClient.tsx src/components/mobile/MobileDailyInputClient.tsx`, `npm run build`, HTTP smoke electric pages and affected APIs |

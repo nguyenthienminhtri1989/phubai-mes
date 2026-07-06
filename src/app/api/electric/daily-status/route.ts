@@ -19,14 +19,25 @@ export async function GET(request: NextRequest) {
   }
 
   const recordDate = toRecordDate(date);
+  const meterType = searchParams.get("type") ? Number(searchParams.get("type")) : undefined;
+
   const meters = await prisma.powerMeter.findMany({
     where: {
       isActive: true,
+      type: meterType || undefined,
       transformerUnitId: transformerUnitId || undefined,
       transformerId: transformerId || undefined,
-      transformer: factoryId ? { factoryId } : undefined,
+      ...(factoryId
+        ? {
+            OR: [
+              { transformer: { factoryId } },
+              { factoryId },
+            ],
+          }
+        : {}),
     },
     include: {
+      factory: true,
       group: true,
       transformer: {
         include: {

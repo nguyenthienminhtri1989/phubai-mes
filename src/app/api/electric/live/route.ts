@@ -10,9 +10,42 @@ export async function GET(request: NextRequest) {
   if (!guard.ok) return guard.response;
 
   const meterId = request.nextUrl.searchParams.get("meterId") || "";
-  const meter = await prisma.powerMeter.findUniqueOrThrow({
+  if (!meterId) {
+    return NextResponse.json({ error: "Missing meterId" }, { status: 400 });
+  }
+
+  const meter = await prisma.powerMeter.findUnique({
     where: { id: meterId },
+    include: {
+      factory: true,
+      group: true,
+      transformer: {
+        include: {
+          factory: true,
+        },
+      },
+      transformerUnit: {
+        include: {
+          transformer: {
+            include: {
+              factory: true,
+            },
+          },
+        },
+      },
+    },
   });
+
+  if (!meter) {
+    return NextResponse.json({ error: "Meter not found" }, { status: 404 });
+  }
+
+  if (!meter.isActive || !meter.isAuto || !meter.gatewayIp || !meter.modbusId) {
+    return NextResponse.json(
+      { error: "Meter is not configured for realtime AUTO reading" },
+      { status: 400 },
+    );
+  }
 
   // Gọi agent ở máy văn phòng (qua reverse tunnel) để đọc Modbus.
   const controller = new AbortController();
@@ -60,5 +93,14 @@ export async function GET(request: NextRequest) {
     },
   });
 
-  return NextResponse.json({ meter, telemetry });
+  return NextResponse.json({
+    timestamp: telemetry.timestamp,
+    totalEnergy: telemetry.totalEnergy,
+    voltage: telemetry.voltage,
+    current: telemetry.current,
+    power: telemetry.power,
+    powerFactor: telemetry.powerFactor,
+    meter,
+    telemetry,
+  });
 }

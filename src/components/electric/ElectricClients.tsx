@@ -117,6 +117,7 @@ type ElectricMeter = {
   code: string;
   name: string;
   meterNo?: string | null;
+  factoryId?: string | null;
   transformerId?: string | null;
   transformerUnitId?: number | null;
   groupId?: string | null;
@@ -130,6 +131,7 @@ type ElectricMeter = {
   tu: number;
   ti: number;
   note?: string | null;
+  factory?: Factory | null;
   group?: MeterGroup | null;
   transformer?: Transformer | null;
   transformerUnit?: TransformerUnit | null;
@@ -410,7 +412,7 @@ export function ElectricCatalogClient() {
   const openMeter = (record?: ElectricMeter) => {
     setEditingMeter(record || null);
     formMeter.resetFields();
-    formMeter.setFieldsValue(record || { isActive: true, type: 1, isAuto: false, gatewayPort: 502, registerAddr: 0, tu: 1, ti: 1 });
+    formMeter.setFieldsValue(record ? { ...record, factoryId: record.factoryId || record.factory?.id } : { isActive: true, type: 1, isAuto: false, gatewayPort: 502, registerAddr: 0, tu: 1, ti: 1 });
     setMeterModalOpen(true);
   };
 
@@ -485,6 +487,7 @@ export function ElectricCatalogClient() {
 
   const filteredMeters = useMemo(
     () => meters.filter((meter) => {
+      if (meter.type === 2) return false; // Trung thế hiện ở tab riêng
       if (meterFilterTransformer && meter.transformerId !== meterFilterTransformer) return false;
       if (meterFilterTransformerUnit && meter.transformerUnitId !== meterFilterTransformerUnit) return false;
       return !meterFilterFactory || meter.transformer?.factoryId === meterFilterFactory;
@@ -492,11 +495,16 @@ export function ElectricCatalogClient() {
     [meters, meterFilterFactory, meterFilterTransformer, meterFilterTransformerUnit],
   );
 
+  const mvMeters = useMemo(
+    () => meters.filter((meter) => meter.type === 2),
+    [meters],
+  );
+
   const meterColumns: ColumnsType<ElectricMeter> = [
     { title: "Mã", dataIndex: "code", width: 110, render: (value: string) => <b>{value}</b> },
     { title: "Tên đồng hồ", dataIndex: "name" },
     { title: "Mô tả", dataIndex: "note", render: (value?: string | null) => value || <Text type="secondary">---</Text> },
-    { title: "Loại", dataIndex: "type", render: (value: number) => value === 2 ? <Tag color="purple">Trung thế</Tag> : <Tag color="blue">Hạ thế</Tag> },
+
     {
       title: "Chế độ",
       dataIndex: "isAuto",
@@ -628,7 +636,7 @@ export function ElectricCatalogClient() {
             },
             {
               key: "meters",
-              label: "Đồng hồ điện",
+              label: "ĐH Hạ thế",
               children: (
                 <Space direction="vertical" size={12} style={{ width: "100%" }}>
                   <Row gutter={[8, 8]} justify="space-between">
@@ -642,6 +650,40 @@ export function ElectricCatalogClient() {
                     <Col>{canManageCatalog && <Button type="primary" icon={<PlusOutlined />} onClick={() => openMeter()}>Thêm đồng hồ</Button>}</Col>
                   </Row>
                   <Table rowKey="id" loading={loading} dataSource={filteredMeters} columns={meterColumns} scroll={{ x: 980 }} />
+                </Space>
+              ),
+            },
+            {
+              key: "mv-meters",
+              label: "ĐH Trung thế",
+              children: (
+                <Space direction="vertical" size={12} style={{ width: "100%" }}>
+                  {canManageCatalog && <Button type="primary" icon={<PlusOutlined />} onClick={() => { formMeter.resetFields(); formMeter.setFieldsValue({ isActive: true, type: 2, isAuto: false, gatewayPort: 502, registerAddr: 0, tu: 1, ti: 1 }); setEditingMeter(null); setMeterModalOpen(true); }}>Thêm ĐH trung thế</Button>}
+                  <Table
+                    rowKey="id"
+                    loading={loading}
+                    dataSource={mvMeters}
+                    columns={[
+                      { title: "Mã", dataIndex: "code", width: 110, render: (value: string) => <b>{value}</b> },
+                      { title: "Tên đồng hồ", dataIndex: "name" },
+                      { title: "Nhà máy", render: (_: unknown, record: ElectricMeter) => record.factory?.name || "---" },
+                      { title: "Serial", dataIndex: "meterNo" },
+                      { title: "Mô tả", dataIndex: "note", render: (value?: string | null) => value || <Text type="secondary">---</Text> },
+                      { title: "Trạng thái", dataIndex: "isActive", render: (value: boolean) => <Tag color={value ? "green" : "default"}>{value ? "Đang dùng" : "Ngưng"}</Tag> },
+                      {
+                        title: "Thao tác",
+                        width: 110,
+                        render: (_: unknown, record: ElectricMeter) => canManageCatalog ? (
+                          <Space>
+                            <Button size="small" icon={<EditOutlined />} onClick={() => openMeter(record)} />
+                            <Popconfirm title="Xóa hoặc ngưng dùng đồng hồ này?" onConfirm={() => deleteRecord("/api/electric/meters", record.id)}>
+                              <Button size="small" danger icon={<DeleteOutlined />} />
+                            </Popconfirm>
+                          </Space>
+                        ) : null,
+                      },
+                    ]}
+                  />
                 </Space>
               ),
             },
@@ -712,8 +754,36 @@ export function ElectricCatalogClient() {
       </Modal>
       <Modal title={editingMeter ? "Sửa đồng hồ điện" : "Thêm đồng hồ điện"} open={meterModalOpen} width={760} onCancel={() => setMeterModalOpen(false)} onOk={() => formMeter.submit()}>
         <Form form={formMeter} layout="vertical" onFinish={saveMeter}>
-          <Row gutter={12}><Col xs={24} md={8}><Form.Item name="code" label="Mã đồng hồ" rules={[{ required: true }]}><Input /></Form.Item></Col><Col xs={24} md={16}><Form.Item name="name" label="Tên đồng hồ" rules={[{ required: true }]}><Input /></Form.Item></Col><Col xs={24} md={12}><Form.Item name="transformerId" label="Trạm biến áp" rules={[{ required: true }]}><Select allowClear options={transformers.map((item) => ({ label: item.factory ? item.factory.name + " - " + item.name : item.name, value: item.id }))} /></Form.Item></Col><Col xs={24} md={12}><Form.Item noStyle shouldUpdate={(prev, next) => prev.transformerId !== next.transformerId}>{({ getFieldValue }) => <Form.Item name="transformerUnitId" label="Máy biến áp" rules={[{ required: true }]}><Select allowClear options={transformerUnits.filter((unit) => !getFieldValue("transformerId") || unit.transformerId === getFieldValue("transformerId")).map((unit) => ({ label: unit.name, value: unit.id }))} /></Form.Item>}</Form.Item></Col><Col xs={24} md={12}><Form.Item name="groupId" label="Nhóm đồng hồ"><Select allowClear options={groups.map((item) => ({ label: item.name, value: item.id }))} /></Form.Item></Col><Col xs={24} md={8}><Form.Item name="type" label="Loại đồng hồ" rules={[{ required: true }]}><Select options={[{ label: "Hạ thế (1 chỉ số)", value: 1 }, { label: "Trung thế (3 chỉ số)", value: 2 }]} /></Form.Item></Col><Col xs={24} md={8}><Form.Item name="tu" label="TU" rules={[{ required: true }]}><InputNumber min={1} style={{ width: "100%" }} /></Form.Item></Col><Col xs={24} md={8}><Form.Item name="ti" label="TI" rules={[{ required: true }]}><InputNumber min={1} style={{ width: "100%" }} /></Form.Item></Col><Col xs={24} md={8}><Form.Item name="meterNo" label="Số serial"><Input /></Form.Item></Col></Row>
-          <Card size="small" title="Cấu hình thu thập tự động qua Gateway" style={{ marginBottom: 16 }}><Form.Item name="isAuto" label="Chế độ lấy số" valuePropName="checked"><Switch checkedChildren="AUTO" unCheckedChildren="MANUAL" /></Form.Item><Form.Item noStyle shouldUpdate={(prev, next) => prev.isAuto !== next.isAuto}>{({ getFieldValue }) => getFieldValue("isAuto") ? <Row gutter={12}><Col xs={24} md={10}><Form.Item name="gatewayIp" label="Gateway IP" rules={[{ required: true }]}><Input placeholder="192.168.1.253" /></Form.Item></Col><Col xs={24} md={7}><Form.Item name="gatewayPort" label="Gateway Port" rules={[{ required: true }]}><InputNumber min={1} style={{ width: "100%" }} /></Form.Item></Col><Col xs={24} md={7}><Form.Item name="modbusId" label="Slave ID" rules={[{ required: true }]}><InputNumber min={1} max={255} style={{ width: "100%" }} /></Form.Item></Col><Col xs={24} md={7}><Form.Item name="registerAddr" label="Register Active Energy"><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col></Row> : null}</Form.Item></Card>
+          <Form.Item name="type" hidden><InputNumber /></Form.Item>
+          <Row gutter={12}>
+            <Col xs={24} md={8}><Form.Item name="code" label="Mã đồng hồ" rules={[{ required: true }]}><Input /></Form.Item></Col>
+            <Col xs={24} md={16}><Form.Item name="name" label="Tên đồng hồ" rules={[{ required: true }]}><Input /></Form.Item></Col>
+            <Form.Item noStyle shouldUpdate={(prev, next) => prev.type !== next.type}>
+              {({ getFieldValue }) => getFieldValue("type") === 2 ? (
+                <Col xs={24} md={12}><Form.Item name="factoryId" label="Nhà máy" rules={[{ required: true }]}><Select options={factories.map((item) => ({ label: item.name, value: item.id }))} /></Form.Item></Col>
+              ) : (
+                <>
+                  <Col xs={24} md={12}><Form.Item name="transformerId" label="Trạm biến áp" rules={[{ required: true }]}><Select allowClear options={transformers.map((item) => ({ label: item.factory ? item.factory.name + " - " + item.name : item.name, value: item.id }))} /></Form.Item></Col>
+                  <Col xs={24} md={12}><Form.Item noStyle shouldUpdate={(prev, next) => prev.transformerId !== next.transformerId}>{({ getFieldValue: gfv }) => <Form.Item name="transformerUnitId" label="Máy biến áp"><Select allowClear options={transformerUnits.filter((unit) => !gfv("transformerId") || unit.transformerId === gfv("transformerId")).map((unit) => ({ label: unit.name, value: unit.id }))} /></Form.Item>}</Form.Item></Col>
+                </>
+              )}
+            </Form.Item>
+            <Col xs={24} md={12}><Form.Item name="groupId" label="Nhóm đồng hồ"><Select allowClear options={groups.map((item) => ({ label: item.name, value: item.id }))} /></Form.Item></Col>
+            <Form.Item noStyle shouldUpdate={(prev, next) => prev.type !== next.type}>
+              {({ getFieldValue }) => getFieldValue("type") === 2 ? null : (
+                <>
+                  <Col xs={24} md={8}><Form.Item name="tu" label="TU" rules={[{ required: true }]}><InputNumber min={1} style={{ width: "100%" }} /></Form.Item></Col>
+                  <Col xs={24} md={8}><Form.Item name="ti" label="TI" rules={[{ required: true }]}><InputNumber min={1} style={{ width: "100%" }} /></Form.Item></Col>
+                </>
+              )}
+            </Form.Item>
+            <Col xs={24} md={8}><Form.Item name="meterNo" label="Số serial"><Input /></Form.Item></Col>
+          </Row>
+          <Form.Item noStyle shouldUpdate={(prev, next) => prev.type !== next.type}>
+            {({ getFieldValue }) => getFieldValue("type") === 2 ? null : (
+              <Card size="small" title="Cấu hình thu thập tự động qua Gateway" style={{ marginBottom: 16 }}><Form.Item name="isAuto" label="Chế độ lấy số" valuePropName="checked"><Switch checkedChildren="AUTO" unCheckedChildren="MANUAL" /></Form.Item><Form.Item noStyle shouldUpdate={(prev, next) => prev.isAuto !== next.isAuto}>{({ getFieldValue: gfv }) => gfv("isAuto") ? <Row gutter={12}><Col xs={24} md={10}><Form.Item name="gatewayIp" label="Gateway IP" rules={[{ required: true }]}><Input placeholder="192.168.1.253" /></Form.Item></Col><Col xs={24} md={7}><Form.Item name="gatewayPort" label="Gateway Port" rules={[{ required: true }]}><InputNumber min={1} style={{ width: "100%" }} /></Form.Item></Col><Col xs={24} md={7}><Form.Item name="modbusId" label="Slave ID" rules={[{ required: true }]}><InputNumber min={1} max={255} style={{ width: "100%" }} /></Form.Item></Col><Col xs={24} md={7}><Form.Item name="registerAddr" label="Register Active Energy"><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col></Row> : null}</Form.Item></Card>
+            )}
+          </Form.Item>
           <Form.Item name="note" label="Mô tả / khu vực đo"><Input.TextArea rows={2} /></Form.Item><Form.Item name="isActive" label="Đang dùng" valuePropName="checked"><Switch /></Form.Item>
         </Form>
       </Modal>
@@ -884,6 +954,7 @@ export function ElectricDailyInputClient() {
   };
 
   const displayedMeters = useMemo(() => meters.filter((meter) => {
+    if (meter.type === 2) return false; // Trung thế nhập ở trang riêng
     const normalizedKeyword = keyword.trim().toLowerCase();
     if (selectedGroup && meter.groupId !== selectedGroup) return false;
     if (modeFilter === "manual" && meter.isAuto) return false;

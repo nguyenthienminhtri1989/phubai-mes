@@ -79,7 +79,11 @@ const pageTitle: Record<string, { label: string; icon: ReactNode }> = {
     icon: <DashboardOutlined />,
   },
   "/electric/daily-input": {
-    label: "Nhập chỉ số điện",
+    label: "Nhập ĐH hạ thế",
+    icon: <FormOutlined />,
+  },
+  "/electric/daily-mv": {
+    label: "Nhập ĐH trung thế",
     icon: <FormOutlined />,
   },
   "/electric/live": {
@@ -140,7 +144,12 @@ function buildMenuItems(role?: string): MenuProps["items"] {
         {
           key: "/electric/daily-input",
           icon: <FormOutlined />,
-          label: "Nhập chỉ số điện",
+          label: "Nhập ĐH hạ thế",
+        },
+        {
+          key: "/electric/daily-mv",
+          icon: <FormOutlined />,
+          label: "Nhập ĐH trung thế",
         },
       ],
     },
