@@ -8,12 +8,31 @@ const userSelect = {
   username: true,
   fullName: true,
   role: true,
-  factoryId: true,
-  factory: true,
+  factoryScopes: {
+    include: { factory: true },
+    orderBy: { factory: { code: "asc" as const } },
+  },
   isActive: true,
   createdAt: true,
   updatedAt: true,
 };
+
+function normalizeFactoryIds(value: unknown) {
+  if (Array.isArray(value)) return Array.from(new Set(value.map(String).filter(Boolean)));
+  if (value) return [String(value)];
+  return [];
+}
+
+function presentUser(user: { factoryScopes?: { factoryId: string; factory: unknown }[]; [key: string]: unknown }) {
+  const scopes = user.factoryScopes || [];
+  return {
+    ...user,
+    factoryIds: scopes.map((scope) => scope.factoryId),
+    factories: scopes.map((scope) => scope.factory),
+    factoryId: scopes[0]?.factoryId ?? null,
+    factory: scopes[0]?.factory ?? null,
+  };
+}
 
 export async function GET() {
   const guard = await requireAdmin();
@@ -24,7 +43,7 @@ export async function GET() {
     orderBy: [{ isActive: "desc" }, { username: "asc" }],
   });
 
-  return NextResponse.json(data);
+  return NextResponse.json(data.map(presentUser));
 }
 
 export async function POST(request: NextRequest) {
@@ -36,19 +55,19 @@ export async function POST(request: NextRequest) {
   const password = String(body.password || "");
   const fullName = String(body.fullName || "").trim();
   const role = String(body.role || "VIEWER");
-  const factoryId = body.factoryId ? String(body.factoryId) : null;
+  const factoryIds = normalizeFactoryIds(body.factoryIds ?? body.factoryId);
 
   if (!username || !password || !fullName) {
-    return NextResponse.json({ error: "Thiếu username, password hoặc họ tên" }, { status: 400 });
+    return NextResponse.json({ error: "Thieu username, password hoac ho ten" }, { status: 400 });
   }
 
   if (password.length < 6) {
-    return NextResponse.json({ error: "Mật khẩu phải có ít nhất 6 ký tự" }, { status: 400 });
+    return NextResponse.json({ error: "Mat khau phai co it nhat 6 ky tu" }, { status: 400 });
   }
 
   const existing = await prisma.user.findUnique({ where: { username } });
   if (existing) {
-    return NextResponse.json({ error: "Username đã tồn tại" }, { status: 409 });
+    return NextResponse.json({ error: "Username da ton tai" }, { status: 409 });
   }
 
   const data = await prisma.user.create({
@@ -57,11 +76,13 @@ export async function POST(request: NextRequest) {
       password: await bcrypt.hash(password, 10),
       fullName,
       role: role as "ADMIN" | "MANAGER" | "EDITOR" | "VIEWER",
-      factoryId,
       isActive: body.isActive ?? true,
+      factoryScopes: factoryIds.length
+        ? { create: factoryIds.map((factoryId) => ({ factoryId })) }
+        : undefined,
     },
     select: userSelect,
   });
 
-  return NextResponse.json(data, { status: 201 });
+  return NextResponse.json(presentUser(data), { status: 201 });
 }

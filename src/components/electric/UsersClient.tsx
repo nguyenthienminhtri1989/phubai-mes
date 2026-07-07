@@ -15,6 +15,8 @@ type AppUser = {
   username: string;
   fullName: string;
   role: "ADMIN" | "MANAGER" | "EDITOR" | "VIEWER";
+  factoryIds?: string[];
+  factories?: Factory[];
   factoryId?: string | null;
   factory?: Factory | null;
   isActive: boolean;
@@ -88,14 +90,14 @@ export function UsersClient() {
   const openCreate = () => {
     setEditing(null);
     form.resetFields();
-    form.setFieldsValue({ role: "VIEWER", factoryId: undefined, isActive: true });
+    form.setFieldsValue({ role: "VIEWER", factoryIds: [], isActive: true });
     setModalOpen(true);
   };
 
   const openEdit = (record: AppUser) => {
     setEditing(record);
     form.resetFields();
-    form.setFieldsValue({ ...record, password: undefined });
+    form.setFieldsValue({ ...record, factoryIds: record.factoryIds || [], password: undefined });
     setModalOpen(true);
   };
 
@@ -175,8 +177,8 @@ export function UsersClient() {
           <Form.Item name="role" label="Quyền" rules={[{ required: true }]}>
             <Select options={roleOptions} />
           </Form.Item>
-          <Form.Item name="factoryId" label="Nhà máy được nhập liệu">
-            <Select allowClear placeholder="Không giới hạn" options={factories.map((factory) => ({ label: factory.name, value: factory.id }))} />
+          <Form.Item name="factoryIds" label="Nha may duoc nhap lieu">
+            <Select mode="multiple" allowClear placeholder="Khong gioi han" options={factories.map((factory) => ({ label: factory.name, value: factory.id }))} />
           </Form.Item>
           <Form.Item name="isActive" label="Đang dùng" valuePropName="checked">
             <Switch />

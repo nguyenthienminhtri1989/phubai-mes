@@ -25,18 +25,16 @@ enum UserRole {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  username  String   @unique
-  password  String // bcrypt hash
-  fullName  String
-  role      UserRole @default(VIEWER)
-  factoryId String?
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  factory   Factory? @relation(fields: [factoryId], references: [id], onDelete: SetNull)
+  id            String             @id @default(cuid())
+  username      String             @unique
+  password      String // bcrypt hash
+  fullName      String
+  role          UserRole           @default(VIEWER)
+  isActive      Boolean            @default(true)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  factoryScopes UserFactoryScope[]
 
-  @@index([factoryId])
   @@index([isActive])
 }
 
@@ -51,9 +49,20 @@ model Factory {
   updatedAt    DateTime           @updatedAt
   transformers PowerTransformer[]
   meters        PowerMeter[]
-  users         User[]
+  userScopes    UserFactoryScope[]
 
   @@index([isActive])
+}
+
+model UserFactoryScope {
+  userId    String
+  factoryId String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  factory   Factory  @relation(fields: [factoryId], references: [id], onDelete: Cascade)
+
+  @@id([userId, factoryId])
+  @@index([factoryId])
 }
 
 model PowerTransformer {

@@ -370,3 +370,24 @@ Migrations chính:
 | Ngay | Thay doi | File chinh | Verify |
 | --- | --- | --- | --- |
 | 2026-07-07 | Them lien ket user-nha may va gioi han quyen nhap chi so dien theo nha may, trong khi van cho xem toan bo dong ho. Doi nhan role MANAGER tren header sang nhan quan ly trung tinh. | `prisma/schema.prisma`, `prisma/migrations/20260707090000_add_user_factory_scope/migration.sql`, `src/auth.ts`, `src/app/api/admin/users/route.ts`, `src/app/api/admin/users/[id]/route.ts`, `src/app/api/energy/records/route.ts`, `src/components/electric/UsersClient.tsx`, `src/components/electric/ElectricClients.tsx`, `src/components/electric/MvDailyInputClient.tsx`, `src/components/mobile/MobileDailyInputClient.tsx`, `src/components/AdminLayout.tsx` | `npx prisma migrate deploy`, `npx prisma generate`, `npx prisma migrate status`, `npx eslint src/auth.ts src/app/api/admin/users/route.ts src/app/api/admin/users/[id]/route.ts src/app/api/energy/records/route.ts src/components/AdminLayout.tsx src/components/electric/UsersClient.tsx src/components/electric/ElectricClients.tsx src/components/electric/MvDailyInputClient.tsx src/components/mobile/MobileDailyInputClient.tsx`, `node --check scripts/energy-cron.js`, `npm run build` |
+
+## 2026-07-07 - User multi-factory input scope correction
+
+### Current State Update
+
+- Replaced single `User.factoryId` input scope with many-to-many `UserFactoryScope` because one user can input one, two, or all three factories.
+- Migration `20260707093000_user_factory_multi_scope` backfills existing single-factory assignments into `UserFactoryScope`, then removes the legacy `User.factoryId` column.
+- Admin user management now uses a multi-select `factoryIds` field for factories allowed for daily input.
+- Session data now exposes `session.user.factoryIds`, and daily input authorization checks membership in that array.
+
+### Business Rules Update
+
+- Empty `factoryIds` means no factory restriction during the transition.
+- Non-admin users with one or more `factoryIds` can input only meters whose resolved factory is included in that list.
+- Visibility remains unrestricted: catalogs, filters, reports, realtime, and meter lists still show all factories.
+
+### Feature Ledger Update
+
+| Ngay | Thay doi | File chinh | Verify |
+| --- | --- | --- | --- |
+| 2026-07-07 | Doi phan quyen nhap lieu user-nha may tu 1 nha may sang nhieu nha may bang bang noi `UserFactoryScope`; modal user chon duoc nhieu nha may. | `prisma/schema.prisma`, `prisma/migrations/20260707093000_user_factory_multi_scope/migration.sql`, `src/auth.ts`, `src/app/api/admin/users/route.ts`, `src/app/api/admin/users/[id]/route.ts`, `src/app/api/energy/records/route.ts`, `src/components/electric/UsersClient.tsx`, `src/components/electric/ElectricClients.tsx`, `src/components/electric/MvDailyInputClient.tsx`, `src/components/mobile/MobileDailyInputClient.tsx` | `npx prisma migrate deploy`, `npx prisma generate`, `npx eslint src/auth.ts src/app/api/admin/users/route.ts src/app/api/admin/users/[id]/route.ts src/app/api/energy/records/route.ts src/components/electric/UsersClient.tsx src/components/electric/ElectricClients.tsx src/components/electric/MvDailyInputClient.tsx src/components/mobile/MobileDailyInputClient.tsx`, `npm run build` |

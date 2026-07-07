@@ -34,11 +34,11 @@ const fmtMoney = new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 });
 
 function useRole() {
   const { data: session } = useSession();
-  const sessionUser = session?.user as { role?: string; factoryId?: string | null } | undefined;
+  const sessionUser = session?.user as { role?: string; factoryIds?: string[] } | undefined;
   const role = sessionUser?.role;
   return {
     role,
-    userFactoryId: sessionUser?.factoryId ?? null,
+    userFactoryIds: Array.isArray(sessionUser?.factoryIds) ? sessionUser.factoryIds : [],
     canEditDaily: role === "ADMIN" || role === "MANAGER" || role === "EDITOR",
   };
 }
@@ -93,13 +93,14 @@ function getMvMeterFactoryId(meter: MvMeter) {
   return meter.factoryId || meter.factory?.id || null;
 }
 
-function canInputMvMeter(meter: MvMeter, role?: string, userFactoryId?: string | null) {
-  if (role === "ADMIN" || !userFactoryId) return true;
-  return getMvMeterFactoryId(meter) === userFactoryId;
+function canInputMvMeter(meter: MvMeter, role?: string, userFactoryIds: string[] = []) {
+  if (role === "ADMIN" || userFactoryIds.length === 0) return true;
+  const meterFactoryId = getMvMeterFactoryId(meter);
+  return !!meterFactoryId && userFactoryIds.includes(meterFactoryId);
 }
 
 export function MvDailyInputClient() {
-  const { role, userFactoryId, canEditDaily } = useRole();
+  const { role, userFactoryIds, canEditDaily } = useRole();
   const [selectedDate, setSelectedDate] = useState<Dayjs>(dayjs().subtract(1, "day"));
   const [factories, setFactories] = useState<Factory[]>([]);
   const [selectedFactory, setSelectedFactory] = useState<string>();
@@ -136,7 +137,7 @@ export function MvDailyInputClient() {
   }, [loadMeters]);
 
   const saveRecord = async (meter: MvMeter, values: { currNormal: number; currPeak: number; currOffPeak: number; note?: string }) => {
-    if (!canEditDaily || !canInputMvMeter(meter, role, userFactoryId)) {
+    if (!canEditDaily || !canInputMvMeter(meter, role, userFactoryIds)) {
       message.warning("Chi duoc nhap lieu cho dong ho thuoc nha may cua user");
       return;
     }
@@ -192,7 +193,7 @@ export function MvDailyInputClient() {
       <Row gutter={[16, 16]}>
         {meters.map((meter) => (
           <Col xs={24} lg={12} key={meter.id}>
-            <MvMeterCard meter={meter} date={selectedDate} canEdit={canEditDaily && canInputMvMeter(meter, role, userFactoryId)} saving={saving === meter.id} onSave={(values) => saveRecord(meter, values)} />
+            <MvMeterCard meter={meter} date={selectedDate} canEdit={canEditDaily && canInputMvMeter(meter, role, userFactoryIds)} saving={saving === meter.id} onSave={(values) => saveRecord(meter, values)} />
           </Col>
         ))}
       </Row>

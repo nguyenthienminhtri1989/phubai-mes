@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Missing meterId" }, { status: 400 });
   }
 
-  const sessionUser = guard.session.user as { role?: string; factoryId?: string | null };
+  const sessionUser = guard.session.user as { role?: string; factoryIds?: string[] };
   const meter = await prisma.powerMeter.findUnique({
     where: { id: meterId },
     include: {
@@ -66,8 +66,8 @@ export async function POST(request: NextRequest) {
   }
 
   const meterFactoryId = meter.factoryId || meter.transformer?.factoryId || meter.transformerUnit?.transformer?.factoryId || null;
-  const userFactoryId = sessionUser.factoryId || null;
-  if (sessionUser.role !== "ADMIN" && userFactoryId && meterFactoryId !== userFactoryId) {
+  const userFactoryIds = Array.isArray(sessionUser.factoryIds) ? sessionUser.factoryIds : [];
+  if (sessionUser.role !== "ADMIN" && userFactoryIds.length > 0 && (!meterFactoryId || !userFactoryIds.includes(meterFactoryId))) {
     return NextResponse.json(
       { error: "User is not allowed to input readings for this factory" },
       { status: 403 },

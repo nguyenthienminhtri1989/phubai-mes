@@ -53,12 +53,12 @@ import { MeterFace } from "./MeterFace";
 
 function useRole() {
   const { data: session } = useSession();
-  const sessionUser = session?.user as { role?: string; factoryId?: string | null } | undefined;
+  const sessionUser = session?.user as { role?: string; factoryIds?: string[] } | undefined;
   const role = sessionUser?.role;
-  const userFactoryId = sessionUser?.factoryId ?? null;
+  const userFactoryIds = Array.isArray(sessionUser?.factoryIds) ? sessionUser.factoryIds : [];
   return {
     role,
-    userFactoryId,
+    userFactoryIds,
     isAdmin: role === "ADMIN",
     canManageCatalog: role === "ADMIN" || role === "MANAGER",
     canEditDaily: role === "ADMIN" || role === "MANAGER" || role === "EDITOR",
@@ -119,9 +119,10 @@ function getMeterFactoryId(meter: ElectricMeter) {
   return meter.factoryId || meter.factory?.id || meter.transformer?.factoryId || meter.transformer?.factory?.id || meter.transformerUnit?.transformer?.factoryId || meter.transformerUnit?.transformer?.factory?.id || null;
 }
 
-function canInputMeterByFactory(meter: ElectricMeter, role?: string, userFactoryId?: string | null) {
-  if (role === "ADMIN" || !userFactoryId) return true;
-  return getMeterFactoryId(meter) === userFactoryId;
+function canInputMeterByFactory(meter: ElectricMeter, role?: string, userFactoryIds: string[] = []) {
+  if (role === "ADMIN" || userFactoryIds.length === 0) return true;
+  const meterFactoryId = getMeterFactoryId(meter);
+  return !!meterFactoryId && userFactoryIds.includes(meterFactoryId);
 }
 
 type ElectricMeter = {
@@ -875,7 +876,7 @@ function DraftStatusChip({ evaluation }: { evaluation: DraftEvaluation }) {
 }
 
 export function ElectricDailyInputClient() {
-  const { role, userFactoryId, canEditDaily } = useRole();
+  const { role, userFactoryIds, canEditDaily } = useRole();
   const [selectedDate, setSelectedDate] = useState<Dayjs>(dayjs().subtract(1, "day"));
   const [factories, setFactories] = useState<Factory[]>([]);
   const [transformers, setTransformers] = useState<Transformer[]>([]);
@@ -898,7 +899,7 @@ export function ElectricDailyInputClient() {
   const [form] = Form.useForm();
   const watchedValues = Form.useWatch([], form) as Record<string, number | boolean | string | undefined> | undefined;
   const currentLastRecord = currentMeter?.lastRecord ?? null;
-  const canInputMeter = useCallback((meter: ElectricMeter) => canEditDaily && canInputMeterByFactory(meter, role, userFactoryId), [canEditDaily, role, userFactoryId]);
+  const canInputMeter = useCallback((meter: ElectricMeter) => canEditDaily && canInputMeterByFactory(meter, role, userFactoryIds), [canEditDaily, role, userFactoryIds]);
 
   useEffect(() => {
     Promise.all([

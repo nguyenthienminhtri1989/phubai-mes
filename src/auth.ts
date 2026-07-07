@@ -14,7 +14,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const username = String(credentials.username).trim();
         const password = String(credentials.password);
 
-        const user = await prisma.user.findUnique({ where: { username } });
+        const user = await prisma.user.findUnique({
+          where: { username },
+          include: { factoryScopes: { select: { factoryId: true } } },
+        });
         if (!user) return null;
         if (!user.isActive) throw new Error("Tài khoản đã bị khóa");
 
@@ -26,7 +29,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           name: user.fullName,
           username: user.username,
           role: user.role,
-          factoryId: user.factoryId,
+          factoryIds: user.factoryScopes.map((scope) => scope.factoryId),
         } as never;
       },
     }),
@@ -38,18 +41,21 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.id = user.id;
         token.username = (user as { username: string }).username;
         token.role = (user as { role: string }).role;
-        token.factoryId = (user as { factoryId?: string | null }).factoryId ?? null;
+        token.factoryIds = (user as { factoryIds?: string[] }).factoryIds ?? [];
         return token;
       }
 
       // Các lần sau — refresh role/isActive từ DB để admin đổi quyền có hiệu lực ngay
       if (token.id) {
         try {
-          const dbUser = await prisma.user.findUnique({ where: { id: token.id as string } });
+          const dbUser = await prisma.user.findUnique({
+            where: { id: token.id as string },
+            include: { factoryScopes: { select: { factoryId: true } } },
+          });
           if (!dbUser || !dbUser.isActive) return null;
           token.role = dbUser.role;
           token.username = dbUser.username;
-          token.factoryId = dbUser.factoryId;
+          token.factoryIds = dbUser.factoryScopes.map((scope) => scope.factoryId);
         } catch {
           // Nếu DB lỗi, giữ nguyên token cũ
         }
@@ -62,7 +68,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         session.user.id = token.id as string;
         (session.user as { username?: string }).username = token.username as string;
         (session.user as { role?: string }).role = token.role as string;
-        (session.user as { factoryId?: string | null }).factoryId = token.factoryId as string | null;
+        (session.user as { factoryIds?: string[] }).factoryIds = Array.isArray(token.factoryIds) ? token.factoryIds as string[] : [];
       }
       return session;
     },
