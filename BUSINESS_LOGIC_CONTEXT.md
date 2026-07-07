@@ -348,4 +348,25 @@ Migrations chính:
 
 | Ngay | Thay doi | File chinh | Verify |
 | --- | --- | --- | --- |
-| 2026-07-06 | Them migration bo sung cot `PowerMeter.factoryId` con thieu trong DB, backfill tu tram bien ap, sua loi P2022 tren API meters/daily-status. | `prisma/migrations/20260706090000_add_power_meter_factory_id/migration.sql`, `BUSINESS_LOGIC_CONTEXT.md` | `npx prisma migrate deploy`, `npx prisma migrate status`, `npx prisma generate`, `npx eslint src/app/api/energy/meters/route.ts src/app/api/electric/daily-status/route.ts src/app/api/electric/live/route.ts src/components/electric/ElectricClients.tsx src/components/electric/MvDailyInputClient.tsx src/components/mobile/MobileDailyInputClient.tsx`, `npm run build`, HTTP smoke electric pages and affected APIs |
+| 2026-07-06 | Them migration bo sung cot `PowerMeter.factoryId` con thieu trong DB, backfill tu tram bien ap, sua loi P2022 tren API meters/daily-status. | `prisma/migrations/20260706090000_add_power_meter_factory_id/migration.sql`, `BUSINESS_LOGIC_CONTEXT.md` | `npx prisma migrate deploy`, `npx prisma migrate status`, `npx prisma generate`, `npx eslint src/app/api/energy/meters/route.ts src/app/api/electric/daily-status/route.ts src/app/api/electric/live/route.ts src/components/electric/ElectricClients.tsx src/components/electric/MvDailyInputClient.tsx src/components/mobile/MobileDailyInputClient.tsx`, `npm run build`, HTTP smoke electric pages and affected APIs |## 2026-07-07 - User factory scope for electric daily input
+
+### Current State Update
+
+- Added optional `User.factoryId` relation to `Factory` for daily-input permission scope.
+- Admin user management now shows and edits the factory assigned to each user.
+- Desktop low-voltage daily input, medium-voltage daily input, and mobile daily input still load all meters for viewing, but disable/save-block meters outside the current user's assigned factory.
+- The daily record API enforces the same rule server-side for POST requests so UI bypass cannot write records for another factory.
+- The MANAGER label in the app header was changed from department-head wording to a neutral management label.
+
+### Business Rules Update
+
+- Factory scope limits data entry only; it must not hide meters, reports, catalogs, or realtime read visibility.
+- `ADMIN` users can input all factories.
+- Non-admin users with `User.factoryId` can only input readings for meters whose factory is resolved from `PowerMeter.factoryId`, `PowerMeter.transformer.factoryId`, or `PowerMeter.transformerUnit.transformer.factoryId`.
+- Non-admin users without `User.factoryId` keep the previous input behavior during transition so existing accounts are not accidentally locked out before factory assignment.
+
+### Feature Ledger Update
+
+| Ngay | Thay doi | File chinh | Verify |
+| --- | --- | --- | --- |
+| 2026-07-07 | Them lien ket user-nha may va gioi han quyen nhap chi so dien theo nha may, trong khi van cho xem toan bo dong ho. Doi nhan role MANAGER tren header sang nhan quan ly trung tinh. | `prisma/schema.prisma`, `prisma/migrations/20260707090000_add_user_factory_scope/migration.sql`, `src/auth.ts`, `src/app/api/admin/users/route.ts`, `src/app/api/admin/users/[id]/route.ts`, `src/app/api/energy/records/route.ts`, `src/components/electric/UsersClient.tsx`, `src/components/electric/ElectricClients.tsx`, `src/components/electric/MvDailyInputClient.tsx`, `src/components/mobile/MobileDailyInputClient.tsx`, `src/components/AdminLayout.tsx` | `npx prisma migrate deploy`, `npx prisma generate`, `npx prisma migrate status`, `npx eslint src/auth.ts src/app/api/admin/users/route.ts src/app/api/admin/users/[id]/route.ts src/app/api/energy/records/route.ts src/components/AdminLayout.tsx src/components/electric/UsersClient.tsx src/components/electric/ElectricClients.tsx src/components/electric/MvDailyInputClient.tsx src/components/mobile/MobileDailyInputClient.tsx`, `node --check scripts/energy-cron.js`, `npm run build` |

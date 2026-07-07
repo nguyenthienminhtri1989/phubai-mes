@@ -34,8 +34,11 @@ const fmtMoney = new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 });
 
 function useRole() {
   const { data: session } = useSession();
-  const role = (session?.user as { role?: string } | undefined)?.role;
+  const sessionUser = session?.user as { role?: string; factoryId?: string | null } | undefined;
+  const role = sessionUser?.role;
   return {
+    role,
+    userFactoryId: sessionUser?.factoryId ?? null,
     canEditDaily: role === "ADMIN" || role === "MANAGER" || role === "EDITOR",
   };
 }
@@ -75,6 +78,7 @@ type PowerRecord = {
 
 type MvMeter = {
   id: string;
+  factoryId?: string | null;
   code: string;
   name: string;
   tu: number;
@@ -85,8 +89,17 @@ type MvMeter = {
   lastRecord?: PowerRecord | null;
 };
 
+function getMvMeterFactoryId(meter: MvMeter) {
+  return meter.factoryId || meter.factory?.id || null;
+}
+
+function canInputMvMeter(meter: MvMeter, role?: string, userFactoryId?: string | null) {
+  if (role === "ADMIN" || !userFactoryId) return true;
+  return getMvMeterFactoryId(meter) === userFactoryId;
+}
+
 export function MvDailyInputClient() {
-  const { canEditDaily } = useRole();
+  const { role, userFactoryId, canEditDaily } = useRole();
   const [selectedDate, setSelectedDate] = useState<Dayjs>(dayjs().subtract(1, "day"));
   const [factories, setFactories] = useState<Factory[]>([]);
   const [selectedFactory, setSelectedFactory] = useState<string>();
@@ -123,6 +136,10 @@ export function MvDailyInputClient() {
   }, [loadMeters]);
 
   const saveRecord = async (meter: MvMeter, values: { currNormal: number; currPeak: number; currOffPeak: number; note?: string }) => {
+    if (!canEditDaily || !canInputMvMeter(meter, role, userFactoryId)) {
+      message.warning("Chi duoc nhap lieu cho dong ho thuoc nha may cua user");
+      return;
+    }
     setSaving(meter.id);
     try {
       await fetchJson("/api/electric/daily-input", postBody({
@@ -175,7 +192,7 @@ export function MvDailyInputClient() {
       <Row gutter={[16, 16]}>
         {meters.map((meter) => (
           <Col xs={24} lg={12} key={meter.id}>
-            <MvMeterCard meter={meter} date={selectedDate} canEdit={canEditDaily} saving={saving === meter.id} onSave={(values) => saveRecord(meter, values)} />
+            <MvMeterCard meter={meter} date={selectedDate} canEdit={canEditDaily && canInputMvMeter(meter, role, userFactoryId)} saving={saving === meter.id} onSave={(values) => saveRecord(meter, values)} />
           </Col>
         ))}
       </Row>

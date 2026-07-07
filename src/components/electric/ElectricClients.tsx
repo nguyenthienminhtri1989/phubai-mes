@@ -53,9 +53,12 @@ import { MeterFace } from "./MeterFace";
 
 function useRole() {
   const { data: session } = useSession();
-  const role = (session?.user as { role?: string } | undefined)?.role;
+  const sessionUser = session?.user as { role?: string; factoryId?: string | null } | undefined;
+  const role = sessionUser?.role;
+  const userFactoryId = sessionUser?.factoryId ?? null;
   return {
     role,
+    userFactoryId,
     isAdmin: role === "ADMIN",
     canManageCatalog: role === "ADMIN" || role === "MANAGER",
     canEditDaily: role === "ADMIN" || role === "MANAGER" || role === "EDITOR",
@@ -111,6 +114,15 @@ type MeterGroup = {
   sortOrder: number;
   isActive: boolean;
 };
+
+function getMeterFactoryId(meter: ElectricMeter) {
+  return meter.factoryId || meter.factory?.id || meter.transformer?.factoryId || meter.transformer?.factory?.id || meter.transformerUnit?.transformer?.factoryId || meter.transformerUnit?.transformer?.factory?.id || null;
+}
+
+function canInputMeterByFactory(meter: ElectricMeter, role?: string, userFactoryId?: string | null) {
+  if (role === "ADMIN" || !userFactoryId) return true;
+  return getMeterFactoryId(meter) === userFactoryId;
+}
 
 type ElectricMeter = {
   id: string;
@@ -863,7 +875,7 @@ function DraftStatusChip({ evaluation }: { evaluation: DraftEvaluation }) {
 }
 
 export function ElectricDailyInputClient() {
-  const { canEditDaily } = useRole();
+  const { role, userFactoryId, canEditDaily } = useRole();
   const [selectedDate, setSelectedDate] = useState<Dayjs>(dayjs().subtract(1, "day"));
   const [factories, setFactories] = useState<Factory[]>([]);
   const [transformers, setTransformers] = useState<Transformer[]>([]);
@@ -886,6 +898,7 @@ export function ElectricDailyInputClient() {
   const [form] = Form.useForm();
   const watchedValues = Form.useWatch([], form) as Record<string, number | boolean | string | undefined> | undefined;
   const currentLastRecord = currentMeter?.lastRecord ?? null;
+  const canInputMeter = useCallback((meter: ElectricMeter) => canEditDaily && canInputMeterByFactory(meter, role, userFactoryId), [canEditDaily, role, userFactoryId]);
 
   useEffect(() => {
     Promise.all([
@@ -976,11 +989,12 @@ export function ElectricDailyInputClient() {
     for (const meter of meters) {
       if (meter.type === 2) continue;
       if (meter.todayRecord) continue;
+      if (!canInputMeter(meter)) continue;
       const evaluation = evaluateDraft(meter, drafts[meter.id]);
       if (evaluation.status !== "empty" && evaluation.status !== "error") count += 1;
     }
     return count;
-  }, [meters, drafts]);
+  }, [meters, drafts, canInputMeter]);
 
   const errorCount = useMemo(() => {
     let count = 0;
@@ -1005,6 +1019,10 @@ export function ElectricDailyInputClient() {
   }, [selectedDate]);
 
   const saveInline = async (meter: ElectricMeter) => {
+    if (!canInputMeter(meter)) {
+      message.warning("Chi duoc nhap lieu cho dong ho thuoc nha may cua user");
+      return;
+    }
     const draft = drafts[meter.id];
     const evaluation = evaluateDraft(meter, draft);
     if (evaluation.status === "empty") {
@@ -1032,6 +1050,7 @@ export function ElectricDailyInputClient() {
     for (const meter of meters) {
       if (meter.type === 2) continue;
       if (meter.todayRecord) continue;
+      if (!canInputMeter(meter)) continue;
       const draft = drafts[meter.id];
       const evaluation = evaluateDraft(meter, draft);
       if (evaluation.status === "empty" || evaluation.status === "error") continue;
@@ -1087,6 +1106,10 @@ export function ElectricDailyInputClient() {
   };
 
   const saveRecord = async () => {
+    if (currentMeter && !canInputMeter(currentMeter)) {
+      message.warning("Chi duoc nhap lieu cho dong ho thuoc nha may cua user");
+      return;
+    }
     const values = await form.validateFields();
     if (currentMeter?.type !== 2 && !values.isReset && Number(values.currTotal || 0) < Number(values.prevTotal || 0)) {
       message.error("Chỉ số sau nhỏ hơn chỉ số trước. Bật reset nếu đã thay đồng hồ.");
@@ -1271,7 +1294,7 @@ export function ElectricDailyInputClient() {
               }
               if (record.type === 2) {
                 return (
-                  <Button icon={<EditOutlined />} onClick={() => openRecord(record)} disabled={!canEditDaily}>
+                  <Button icon={<EditOutlined />} onClick={() => openRecord(record)} disabled={!canInputMeter(record)}>
                     Nhập 3 chỉ số
                   </Button>
                 );
@@ -1286,7 +1309,7 @@ export function ElectricDailyInputClient() {
                     value={draft?.currTotal === "" || draft?.currTotal === undefined ? null : Number(draft.currTotal)}
                     onChange={(value) => updateDraft(record.id, { currTotal: value === null || value === undefined ? "" : String(value) })}
                     onPressEnter={() => void saveInline(record)}
-                    disabled={!canEditDaily}
+                    disabled={!canInputMeter(record)}
                     controls={false}
                   />
                   <Space size={6}>
@@ -1294,7 +1317,7 @@ export function ElectricDailyInputClient() {
                       size="small"
                       checked={draft?.isReset ?? false}
                       onChange={(checked) => updateDraft(record.id, { isReset: checked })}
-                      disabled={!canEditDaily}
+                      disabled={!canInputMeter(record)}
                     />
                     <Text type="secondary" style={{ fontSize: 12 }}>Reset / thay đồng hồ</Text>
                   </Space>
@@ -1328,6 +1351,7 @@ export function ElectricDailyInputClient() {
             fixed: "right" as const,
             render: (_: unknown, record: ElectricMeter) => {
               if (!canEditDaily) return null;
+              if (!canInputMeter(record)) return <Tag color="default">Chi xem</Tag>;
               if (record.todayRecord) {
                 return (
                   <Button icon={<EditOutlined />} onClick={() => openRecord(record)} size="small">Sửa</Button>
@@ -1345,7 +1369,7 @@ export function ElectricDailyInputClient() {
                     size="small"
                     block
                     loading={savingId === record.id}
-                    disabled={evaluation.status === "empty" || evaluation.status === "error"}
+                    disabled={!canInputMeter(record) || evaluation.status === "empty" || evaluation.status === "error"}
                     onClick={() => void saveInline(record)}
                   >
                     Lưu
@@ -1365,7 +1389,7 @@ export function ElectricDailyInputClient() {
         ]}
       />
 
-      <Modal title={(currentMeter?.todayRecord ? "Sửa chỉ số: " : "Nhập chỉ số: ") + (currentMeter?.code || "")} open={modalOpen} width={820} onCancel={() => setModalOpen(false)} onOk={saveRecord} okText="Lưu MANUAL">
+      <Modal title={(currentMeter?.todayRecord ? "Sửa chỉ số: " : "Nhập chỉ số: ") + (currentMeter?.code || "")} open={modalOpen} width={820} onCancel={() => setModalOpen(false)} onOk={saveRecord} okText="Lưu MANUAL" okButtonProps={{ disabled: currentMeter ? !canInputMeter(currentMeter) : true }}>
         <Form form={form} layout="vertical">
           {currentMeter?.isAuto ? <Alert type="warning" showIcon style={{ marginBottom: 12 }} message="Đồng hồ AUTO chỉ nên nhập tay khi mạng, cáp hoặc Gateway gặp sự cố." /> : null}
           <Form.Item name="meterId" hidden><Input /></Form.Item>

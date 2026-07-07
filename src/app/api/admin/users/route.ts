@@ -8,6 +8,8 @@ const userSelect = {
   username: true,
   fullName: true,
   role: true,
+  factoryId: true,
+  factory: true,
   isActive: true,
   createdAt: true,
   updatedAt: true,
@@ -34,6 +36,7 @@ export async function POST(request: NextRequest) {
   const password = String(body.password || "");
   const fullName = String(body.fullName || "").trim();
   const role = String(body.role || "VIEWER");
+  const factoryId = body.factoryId ? String(body.factoryId) : null;
 
   if (!username || !password || !fullName) {
     return NextResponse.json({ error: "Thiếu username, password hoặc họ tên" }, { status: 400 });
@@ -54,6 +57,7 @@ export async function POST(request: NextRequest) {
       password: await bcrypt.hash(password, 10),
       fullName,
       role: role as "ADMIN" | "MANAGER" | "EDITOR" | "VIEWER",
+      factoryId,
       isActive: body.isActive ?? true,
     },
     select: userSelect,

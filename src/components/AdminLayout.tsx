@@ -61,7 +61,7 @@ const COLORS = {
 // ─── Role helpers ─────────────────────────────────────────────────────────────
 const roleLabel: Record<string, string> = {
   ADMIN: "Quản trị",
-  MANAGER: "Trưởng phòng",
+  MANAGER: "Quản lý",
   EDITOR: "Biên tập",
   VIEWER: "Chỉ xem",
 };

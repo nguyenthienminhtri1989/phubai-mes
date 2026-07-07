@@ -30,6 +30,7 @@ import {
 } from "antd";
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
+import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 const { Text, Title } = Typography;
@@ -69,6 +70,8 @@ type ElectricMeter = {
   code: string;
   name: string;
   meterNo?: string | null;
+  factoryId?: string | null;
+  factory?: Factory | null;
   transformerId?: string | null;
   transformerUnitId?: number | null;
   groupId?: string | null;
@@ -99,6 +102,15 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
 
 function postBody(method: "POST" | "PUT" | "DELETE", body: object): RequestInit {
   return { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+}
+
+function getMeterFactoryId(meter: ElectricMeter) {
+  return meter.factoryId || meter.factory?.id || meter.transformer?.factoryId || meter.transformer?.factory?.id || meter.transformerUnit?.transformer?.factoryId || meter.transformerUnit?.transformer?.factory?.id || null;
+}
+
+function canInputMeter(meter: ElectricMeter, role?: string, userFactoryId?: string | null) {
+  if (role === "ADMIN" || !userFactoryId) return true;
+  return getMeterFactoryId(meter) === userFactoryId;
 }
 
 function evaluate(meter: ElectricMeter, draft?: DailyDraft): { status: DraftStatus; cons: number; msg: string } {
@@ -144,6 +156,11 @@ const STATUS_TAG_COLOR: Record<DraftStatus, string> = {
 };
 
 export function MobileDailyInputClient() {
+  const { data: session } = useSession();
+  const sessionUser = session?.user as { role?: string; factoryId?: string | null } | undefined;
+  const role = sessionUser?.role;
+  const userFactoryId = sessionUser?.factoryId ?? null;
+  const canEditDaily = role === "ADMIN" || role === "MANAGER" || role === "EDITOR";
   const [selectedDate, setSelectedDate] = useState<Dayjs>(dayjs().subtract(1, "day"));
   const [factories, setFactories] = useState<Factory[]>([]);
   const [transformers, setTransformers] = useState<Transformer[]>([]);
@@ -240,11 +257,12 @@ export function MobileDailyInputClient() {
     let c = 0;
     for (const m of meters) {
       if (m.type === 2 || m.todayRecord) continue;
+      if (!canEditDaily || !canInputMeter(m, role, userFactoryId)) continue;
       const ev = evaluate(m, drafts[m.id]);
       if (ev.status !== "empty" && ev.status !== "error") c++;
     }
     return c;
-  }, [meters, drafts]);
+  }, [meters, drafts, canEditDaily, role, userFactoryId]);
 
   const persistOne = useCallback(async (meter: ElectricMeter, draft: DailyDraft) => {
     await fetchJson("/api/electric/daily-input", postBody("POST", {
@@ -257,6 +275,7 @@ export function MobileDailyInputClient() {
   }, [selectedDate]);
 
   const saveOne = async (meter: ElectricMeter) => {
+    if (!canEditDaily || !canInputMeter(meter, role, userFactoryId)) { message.warning("Chi duoc nhap lieu cho dong ho thuoc nha may cua user"); return; }
     const draft = drafts[meter.id];
     const ev = evaluate(meter, draft);
     if (ev.status === "empty") { message.warning("Chưa nhập chỉ số"); return; }
@@ -277,6 +296,7 @@ export function MobileDailyInputClient() {
     const jobs: Array<{ meter: ElectricMeter; draft: DailyDraft }> = [];
     for (const m of meters) {
       if (m.type === 2 || m.todayRecord) continue;
+      if (!canEditDaily || !canInputMeter(m, role, userFactoryId)) continue;
       const draft = drafts[m.id];
       const ev = evaluate(m, draft);
       if (ev.status !== "empty" && ev.status !== "error") jobs.push({ meter: m, draft });
@@ -555,6 +575,7 @@ export function MobileDailyInputClient() {
                     value={draft?.currTotal === "" || draft?.currTotal === undefined ? null : Number(draft.currTotal)}
                     onChange={(v) => updateDraft(meter.id, { currTotal: v === null || v === undefined ? "" : String(v) })}
                     controls={false}
+                    disabled={!canEditDaily || !canInputMeter(meter, role, userFactoryId)}
                   />
 
                   {/* Reset toggle */}
@@ -565,6 +586,7 @@ export function MobileDailyInputClient() {
                           size="small"
                           checked={draft?.isReset ?? false}
                           onChange={(c) => updateDraft(meter.id, { isReset: c })}
+                          disabled={!canEditDaily || !canInputMeter(meter, role, userFactoryId)}
                         />
                         <Text type="secondary" style={{ fontSize: 12 }}>Reset / thay đồng hồ</Text>
                       </Space>
@@ -599,7 +621,7 @@ export function MobileDailyInputClient() {
                     block
                     size="large"
                     loading={savingId === meter.id}
-                    disabled={ev.status === "empty" || ev.status === "error"}
+                    disabled={!canEditDaily || !canInputMeter(meter, role, userFactoryId) || ev.status === "empty" || ev.status === "error"}
                     onClick={() => void saveOne(meter)}
                     style={{ height: 44, fontSize: 15, fontWeight: 600 }}
                   >

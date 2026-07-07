@@ -26,6 +26,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           name: user.fullName,
           username: user.username,
           role: user.role,
+          factoryId: user.factoryId,
         } as never;
       },
     }),
@@ -37,6 +38,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.id = user.id;
         token.username = (user as { username: string }).username;
         token.role = (user as { role: string }).role;
+        token.factoryId = (user as { factoryId?: string | null }).factoryId ?? null;
         return token;
       }
 
@@ -47,6 +49,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           if (!dbUser || !dbUser.isActive) return null;
           token.role = dbUser.role;
           token.username = dbUser.username;
+          token.factoryId = dbUser.factoryId;
         } catch {
           // Nếu DB lỗi, giữ nguyên token cũ
         }
@@ -59,6 +62,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         session.user.id = token.id as string;
         (session.user as { username?: string }).username = token.username as string;
         (session.user as { role?: string }).role = token.role as string;
+        (session.user as { factoryId?: string | null }).factoryId = token.factoryId as string | null;
       }
       return session;
     },

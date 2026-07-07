@@ -8,6 +8,8 @@ const userSelect = {
   username: true,
   fullName: true,
   role: true,
+  factoryId: true,
+  factory: true,
   isActive: true,
   createdAt: true,
   updatedAt: true,
@@ -51,6 +53,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     data: {
       fullName: body.fullName ? String(body.fullName).trim() : undefined,
       role: nextRole as "ADMIN" | "MANAGER" | "EDITOR" | "VIEWER",
+      factoryId: body.factoryId === undefined ? undefined : (body.factoryId ? String(body.factoryId) : null),
       isActive: nextIsActive,
       password: password ? await bcrypt.hash(password, 10) : undefined,
     },

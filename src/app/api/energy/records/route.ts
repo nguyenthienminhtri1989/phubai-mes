@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { PowerDataSource } from "@/generated/prisma/enums";
 import { buildPowerRecordValues, toRecordDate } from "@/lib/energy-record";
 import { requireEditor } from "@/lib/permissions";
@@ -42,6 +42,38 @@ export async function POST(request: NextRequest) {
   const body = await request.json();
   const recordDate = toRecordDate(body.recordDate);
   const meterId = String(body.meterId || "");
+
+  if (!meterId) {
+    return NextResponse.json({ error: "Missing meterId" }, { status: 400 });
+  }
+
+  const sessionUser = guard.session.user as { role?: string; factoryId?: string | null };
+  const meter = await prisma.powerMeter.findUnique({
+    where: { id: meterId },
+    include: {
+      factory: true,
+      transformer: true,
+      transformerUnit: {
+        include: {
+          transformer: true,
+        },
+      },
+    },
+  });
+
+  if (!meter) {
+    return NextResponse.json({ error: "Meter not found" }, { status: 404 });
+  }
+
+  const meterFactoryId = meter.factoryId || meter.transformer?.factoryId || meter.transformerUnit?.transformer?.factoryId || null;
+  const userFactoryId = sessionUser.factoryId || null;
+  if (sessionUser.role !== "ADMIN" && userFactoryId && meterFactoryId !== userFactoryId) {
+    return NextResponse.json(
+      { error: "User is not allowed to input readings for this factory" },
+      { status: 403 },
+    );
+  }
+
   const optionalNumber = (value: unknown) =>
     value === undefined || value === null || value === "" ? undefined : Number(value);
 

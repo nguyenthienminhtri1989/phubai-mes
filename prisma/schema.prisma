@@ -30,10 +30,13 @@ model User {
   password  String // bcrypt hash
   fullName  String
   role      UserRole @default(VIEWER)
+  factoryId String?
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  factory   Factory? @relation(fields: [factoryId], references: [id], onDelete: SetNull)
 
+  @@index([factoryId])
   @@index([isActive])
 }
 
@@ -48,6 +51,7 @@ model Factory {
   updatedAt    DateTime           @updatedAt
   transformers PowerTransformer[]
   meters        PowerMeter[]
+  users         User[]
 
   @@index([isActive])
 }
