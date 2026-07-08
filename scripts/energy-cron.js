@@ -375,17 +375,15 @@ async function main() {
 
   keepProcessAlive = true;
 
-  cron.schedule("0 * * * *", collectTelemetry, {
-    scheduled: true,
-    timezone: "Asia/Ho_Chi_Minh",
-  });
-
+  // Co che PUSH: telemetry theo gio do collector (energy-push-collector.js) day len qua
+  // /api/collector/ingest. Cron server KHONG con thu Modbus theo gio nua, chi con chot so
+  // hang ngay + don telemetry cu. Van giu `collectTelemetry` + `--collect-once` de test tay.
   cron.schedule(`0 ${CLOSING_HOUR} * * *`, closeDailyRecords, {
     scheduled: true,
     timezone: "Asia/Ho_Chi_Minh",
   });
 
-  console.log(`Energy cron da khoi dong. Thu thap moi gio, chot so luc ${String(CLOSING_HOUR).padStart(2, "0")}:00 gio Viet Nam.`);
+  console.log(`Energy cron da khoi dong (che do PUSH). Chi chot so luc ${String(CLOSING_HOUR).padStart(2, "0")}:00 gio Viet Nam; telemetry do collector day len.`);
 }
 
 main()

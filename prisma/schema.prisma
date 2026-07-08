@@ -146,12 +146,26 @@ model PowerMeter {
   transformerUnit PowerTransformerUnit? @relation(fields: [transformerUnitId], references: [id], onDelete: SetNull)
   records       PowerRecord[]
   telemetry     PowerTelemetry[]
+  liveReading   PowerLiveReading?
 
   @@index([factoryId])
   @@index([groupId])
   @@index([transformerId])
   @@index([transformerUnitId])
   @@index([isActive, isAuto])
+}
+
+// Ban doc MOI NHAT cua moi dong ho AUTO, do collector push len (co che PUSH qua HTTPS).
+// Trang realtime chi doc bang nay (khong cham Modbus qua mang) -> nhanh, on dinh.
+// Khoa theo meterId (moi dong ho 1 dong duy nhat, luon upsert de duoc de len).
+model PowerLiveReading {
+  meterId     String     @id
+  totalEnergy Float
+  readAt      DateTime   @db.Timestamptz
+  updatedAt   DateTime   @updatedAt
+  meter       PowerMeter @relation(fields: [meterId], references: [id], onDelete: Cascade)
+
+  @@index([readAt])
 }
 
 model ElectricityPrice {
