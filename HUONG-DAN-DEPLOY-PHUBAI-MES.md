@@ -1,246 +1,175 @@
 # Hướng Dẫn Deploy PHUBAI-MES
 
-Quy trình chính của PHUBAI-MES làm giống PHUBAI-ERP/PHUBAI-HRM: mỗi lần push code lên nhánh `main`, GitHub Actions chạy trên Windows self-hosted runner ở máy chủ, tự cài dependencies, migrate database, build Next.js và restart PM2.
+PHUBAI-MES chạy trên **VPS Ubuntu (AZDIGI)** và deploy **thủ công qua Git**: sửa code ở máy dev → push lên `main` → SSH vào VPS `git pull` + build + restart PM2. Không dùng GitHub Actions (workflow cũ đã xóa).
 
 ## 1. Kiến trúc
 
-Người dùng -> domain MES -> Cloudflare SSL -> Cloudflare Tunnel -> localhost:3002 -> Next.js/PM2 -> PostgreSQL.
+### Web app + Database (trên VPS)
 
-Trên máy chủ có 2 tiến trình PM2:
-
-- `phubai-mes-web`: chạy Next.js production ở port `3002`.
-- `phubai-mes-energy-cron`: chạy `scripts/energy-cron.js` để thu telemetry và chốt điện năng lúc 08:00.
-
-Workflow dùng PM2 local binary từ thư mục deploy, không phụ thuộc PM2 global. `PM2_HOME` đặt cố định tại `D:\apps\phubai-mes\.pm2` (ngoài thư mục checkout của runner). PM2 apps có `windowsHide: true` để không bật cửa sổ `node.exe` trên Windows.
-
-Thư mục deploy cố định: `D:\apps\phubai-mes`. Workflow build trong `_work` (checkout dir), sau đó robocopy mirror sang `D:\apps\phubai-mes`, PM2 chạy app từ đó. Tách biệt thư mục build và thư mục chạy app để runner không bị lock file khi prepare workflow cho lần deploy sau.
-
-Workflow deploy MES chỉ stop/start `phubai-mes-web` và `phubai-mes-energy-cron`, chỉ kiểm tra/giải phóng port `3002`, không động tới ERP/HRM hoặc port khác.
-
-Workflow deploy chính:
-
-Dev push GitHub -> GitHub Actions self-hosted runner -> Prisma migrate deploy -> Next build -> Robocopy sang D:\apps\phubai-mes -> PM2 restart.
-
-## 2. Chuẩn bị server lần đầu
-
-Cài trên máy chủ Windows:
-
-- Node.js LTS, khuyến nghị Node 22.
-- Git.
-- PostgreSQL.
-- PM2 và PM2 Windows startup.
-- GitHub Actions self-hosted runner.
-- Cloudflare Tunnel connector nếu dùng domain qua Cloudflare.
-
-Cài PM2:
-
-```powershell
-npm install -g pm2 pm2-windows-startup
-pm2-startup install
+```
+Người dùng -> phubaimes.site -> Cloudflare (SSL Full Strict) -> Nginx -> localhost:3002 -> Next.js (PM2) -> PostgreSQL (localhost:5432)
 ```
 
-## 3. Tạo database PostgreSQL
+- VPS Ubuntu, IP `221.132.16.177`, user SSH `deploy`, thư mục app `/home/deploy/apps/phubai-mes`.
+- Node.js qua nvm + PM2.
+- PostgreSQL 17: DB `phubai_mes_db`, user riêng `phubai_mes_user`. Web app kết nối `localhost:5432`.
+- Hai process PM2 trên VPS (xem `ecosystem.config.cjs`):
+  - `phubai-mes`: web Next.js production, port `3002`.
+  - `phubai-mes-energy-cron`: chốt số điện hằng ngày 06:00 giờ VN + dọn telemetry cũ > 6 tháng.
 
-Mở pgAdmin hoặc psql trên server, tạo database:
+### Thu thập điện năng theo cơ chế PUSH (từ 2026-07-08)
 
-```sql
+Đã bỏ SSH tunnel + agent. Kiến trúc mới:
+
+```
+[Máy văn phòng / mini PC tại nhà máy]                 [VPS: phubaimes.site]
+energy-push-collector.js  ── HTTPS (443, x-api-key) ─►  /api/collector/meters  (danh sách đồng hồ AUTO)
+(1 tiến trình duy nhất)                                  /api/collector/ingest  (nhận readings)
+     │ Modbus TCP (LAN/internet)                                │
+     ▼                                                          ▼
+gateway Modbus (Selec EM368)                          PostgreSQL: PowerLiveReading (realtime) + PowerTelemetry (theo giờ)
+                                                                │
+                                                                ▼
+                                                       phubai-mes-energy-cron (PM2): chốt số 06:00 (chỉ đọc DB local)
+```
+
+- **Collector** (`scripts/energy-push-collector.js`) chạy ở **máy văn phòng / mini PC**, KHÔNG chạy trên VPS. Nó đọc Modbus rồi đẩy dữ liệu về VPS qua HTTPS, có buffer `energy-buffer.jsonl` khi mất mạng.
+- **VPS** giữ web app + DB + cron chốt số. Trang realtime `/electric/live` chỉ đọc `PowerLiveReading` (không chạm Modbus qua mạng).
+- Xác thực collector ↔ VPS bằng header `x-api-key` khớp biến môi trường `ENERGY_API_KEY` ở cả hai phía.
+
+## 2. Chuẩn bị VPS lần đầu
+
+```bash
+# Node qua nvm + PM2
+nvm install 24
+npm install -g pm2
+
+# PostgreSQL 17: tạo DB + user riêng (chạy dưới quyền postgres)
+sudo -u postgres psql <<'SQL'
 CREATE DATABASE phubai_mes_db;
+CREATE USER phubai_mes_user WITH PASSWORD 'MAT_KHAU_MANH';
+GRANT ALL PRIVILEGES ON DATABASE phubai_mes_db TO phubai_mes_user;
+SQL
+
+# Lấy code lần đầu
+mkdir -p /home/deploy/apps
+cd /home/deploy/apps
+git clone <repo-url> phubai-mes
 ```
 
-Database URL production dùng mật khẩu thật của PostgreSQL server:
+Nginx reverse proxy `phubaimes.site` -> `http://localhost:3002`, Cloudflare Proxy bật SSL Full (Strict).
+
+## 3. File .env trên VPS
+
+Đặt tại `/home/deploy/apps/phubai-mes/.env`:
 
 ```env
-DATABASE_URL="postgresql://postgres:YOUR_PASSWORD@localhost:5432/phubai_mes_db?schema=public"
-```
-
-## 4. Cài GitHub Actions self-hosted runner
-
-Trong GitHub repo `nguyenthienminhtri1989/phubai-mes`:
-
-1. Vào `Settings -> Actions -> Runners`.
-2. Chọn `New self-hosted runner`.
-3. Chọn Windows.
-4. Làm theo lệnh GitHub đưa ra trên máy chủ.
-5. Khi cấu hình runner, thêm label:
-
-```txt
-phubai-mes
-```
-
-Workflow hiện tại yêu cầu runner labels:
-
-```yaml
-[self-hosted, windows, phubai-mes]
-```
-
-Nếu runner chưa có label `phubai-mes`, workflow sẽ đứng chờ runner phù hợp.
-
-Nên cài runner chạy dạng service để máy chủ khởi động lại vẫn tự nhận job:
-
-```powershell
-.\svc.cmd install
-.\svc.cmd start
-```
-
-## 5. Tạo GitHub Secrets
-
-Vào repo GitHub:
-
-```txt
-Settings -> Secrets and variables -> Actions -> New repository secret
-```
-
-Tạo các secret tối thiểu:
-
-- `DATABASE_URL`
-- `NEXTAUTH_URL`
-- `NEXTAUTH_SECRET`
-- `AUTH_SECRET`
-- `AUTH_TRUST_HOST`
-
-Giá trị gợi ý:
-
-```env
-DATABASE_URL=postgresql://postgres:YOUR_PASSWORD@localhost:5432/phubai_mes_db?schema=public
-NEXTAUTH_URL=https://YOUR_MES_DOMAIN
-NEXTAUTH_SECRET=TAO_CHUOI_SECRET_DAI_TOI_THIEU_32_KY_TU
-AUTH_SECRET=TAO_CHUOI_SECRET_DAI_TOI_THIEU_32_KY_TU
+DATABASE_URL="postgresql://phubai_mes_user:MAT_KHAU_MANH@localhost:5432/phubai_mes_db?schema=public"
+NEXTAUTH_URL="https://phubaimes.site"
+NEXTAUTH_SECRET="CHUOI_SECRET_>=32_KY_TU"
+AUTH_SECRET="CHUOI_SECRET_>=32_KY_TU"
 AUTH_TRUST_HOST=true
+
+# Collector PUSH: PHẢI khớp với .env trên máy chạy collector
+ENERGY_API_KEY="<openssl rand -hex 32>"
+
+# SMTP (nếu cần gửi email phản hồi)
+SMTP_HOST=""
+SMTP_PORT=""
+SMTP_USER=""
+SMTP_PASS=""
+FEEDBACK_TO=""
 ```
 
-Các secret SMTP nếu cần gửi email:
+Sinh API key: `openssl rand -hex 32`.
 
-- `SMTP_HOST`
-- `SMTP_PORT`
-- `SMTP_USER`
-- `SMTP_PASS`
-- `FEEDBACK_TO`
-
-Nếu chưa có domain riêng, tạm thời có thể dùng:
-
-```env
-NEXTAUTH_URL=http://localhost:3002
-```
-
-Khi có domain thật, đổi lại thành HTTPS domain.
-
-## 6. Workflow deploy tự động
-
-Repo có workflow:
-
-```txt
-.github/workflows/deploy.yml
-```
-
-Workflow chạy khi:
-
-- Push code lên nhánh `main`.
-- Bấm chạy thủ công bằng `workflow_dispatch` trong tab Actions.
-
-Các bước workflow:
-
-1. Stop PM2 MES apps từ thư mục deploy (không ảnh hưởng ERP/HRM).
-2. Checkout source vào `_work`.
-3. Setup Node.js 22.
-4. Validate secrets.
-5. Tạo file `.env` từ GitHub Secrets.
-6. Chạy `npm ci`.
-7. Chạy `npx prisma generate`.
-8. Chạy `npx prisma migrate deploy`.
-9. Chạy `npm run build`.
-10. Robocopy mirror `_work` sang `D:\apps\phubai-mes` (loại trừ `.git`, `.github`, `.pm2`).
-11. Start PM2 MES apps từ `D:\apps\phubai-mes`.
-12. Fallback: nếu deploy lỗi, restart app từ deploy dir.
-
-## 7. PM2 ecosystem
-
-Repo có file:
-
-```txt
-ecosystem.config.cjs
-```
-
-File này dùng `__dirname` làm `cwd`. Khi nằm trong `D:\apps\phubai-mes`, PM2 tự trỏ vào đúng thư mục deploy.
-
-Nếu cần kiểm tra thủ công trên server:
-
-```powershell
-cd D:\apps\phubai-mes
-$env:PM2_HOME = "D:\apps\phubai-mes\.pm2"
-.\node_modules\.bin\pm2.cmd startOrRestart ecosystem.config.cjs --update-env
-.\node_modules\.bin\pm2.cmd status
-.\node_modules\.bin\pm2.cmd logs phubai-mes-web
-.\node_modules\.bin\pm2.cmd logs phubai-mes-energy-cron
-.\node_modules\.bin\pm2.cmd save
-```
-
-## 8. Cloudflare Tunnel
-
-Trong Cloudflare Zero Trust:
-
-1. Vào Tunnels.
-2. Chọn tunnel đang chạy trên server hoặc tạo tunnel mới.
-3. Add public hostname cho domain MES.
-4. Service trỏ về:
-
-```txt
-http://localhost:3002
-```
-
-Ví dụ domain có thể là:
-
-```txt
-mes.phubaierp.site
-```
-
-Khi có domain thật, cập nhật GitHub Secret:
-
-```env
-NEXTAUTH_URL=https://mes.phubaierp.site
-```
-
-Sau đó vào GitHub Actions chạy lại workflow deploy.
-
-## 9. Quy trình update tính năng sau này
+## 4. Quy trình deploy (mỗi lần cập nhật tính năng)
 
 Trên máy dev:
 
-```powershell
-cd D:\DU-AN-PHAN-MEM\PHUBAI-MES\phubai-mes
-git status
+```bash
 git add .
 git commit -m "noi dung thay doi"
 git push origin main
 ```
 
-Sau khi push, GitHub Actions tự deploy. Không cần đăng nhập server để pull/build thủ công, trừ khi workflow lỗi.
+Trên VPS:
 
-## 10. Kiểm tra sau deploy
+```bash
+cd /home/deploy/apps/phubai-mes
+git pull
+npm ci                      # chỉ khi package.json / package-lock.json đổi
+npx prisma migrate deploy   # áp migration mới (KHÔNG dùng prisma migrate dev trên production)
+npx prisma generate
+npm run build
+pm2 restart phubai-mes
+# nếu có thay đổi liên quan cron:
+pm2 restart phubai-mes-energy-cron
+pm2 save
+```
 
-Trên GitHub:
+Lần đầu chạy PM2 (thay cho restart):
 
-- Vào tab `Actions`.
-- Mở workflow `Deploy PHUBAI-MES`.
-- Kiểm tra tất cả steps màu xanh.
+```bash
+cd /home/deploy/apps/phubai-mes
+pm2 start ecosystem.config.cjs
+pm2 save
+pm2 startup   # làm theo lệnh in ra để PM2 tự chạy lại khi VPS reboot
+```
 
-Trên server nếu cần:
+## 5. Cấu hình collector (máy văn phòng / mini PC — KHÔNG phải VPS)
 
-```powershell
-npx pm2 status
-curl http://localhost:3002/electric/overview
+`.env` cùng thư mục chạy collector:
+
+```env
+API_BASE_URL=https://phubaimes.site
+ENERGY_API_KEY=<khớp với VPS>
+READ_INTERVAL_SECONDS=60
+```
+
+Chạy:
+
+```bash
+npm install modbus-serial dotenv
+# gỡ 3 tiến trình kiến trúc cũ nếu còn:
+pm2 delete energy-cron energy-agent pg-tunnel
+pm2 start scripts/energy-push-collector.js --name energy-collector
+pm2 save
+```
+
+Sau này chuyển sang mini PC tại nhà máy 3: copy `energy-push-collector.js` + `.env` (giữ nguyên `API_BASE_URL`, `ENERGY_API_KEY`), chạy PM2 như trên, rồi đóng hẳn port 502 trên router.
+
+## 6. Kiểm tra sau deploy
+
+Trên VPS:
+
+```bash
+pm2 status
+pm2 logs phubai-mes
+pm2 logs phubai-mes-energy-cron
 curl http://localhost:3002/api/electric/factories
 ```
 
-Trên trình duyệt:
+Kiểm tra kênh collector (thay KEY bằng `ENERGY_API_KEY`):
 
-- Mở domain MES.
-- Vào `/electric/catalog`.
-- Thử danh mục Nhà máy, Trạm biến áp, Đồng hồ.
-- Vào `/electric/reports` để kiểm tra báo cáo.
+```bash
+curl -H "x-api-key: KEY" https://phubaimes.site/api/collector/meters   # phải trả {"meters":[...]}
+```
 
-## 11. Lưu ý riêng module điện năng
+Chốt số thủ công để kiểm chứng (không cần chờ 06:00):
 
-- Tiến trình `phubai-mes-energy-cron` phải chạy cùng web để thu telemetry/chốt số.
-- Nếu server không kết nối được Gateway USR-N520 trong mạng nhà máy, realtime và cron AUTO sẽ lỗi đọc đồng hồ.
-- Cron chốt dữ liệu ngày lúc 08:00 giờ Việt Nam.
-- Nếu đổi port `3002`, phải đổi cả `package.json`, `ecosystem.config.cjs`, Cloudflare Tunnel service và tài liệu deploy.
+```bash
+cd /home/deploy/apps/phubai-mes
+node scripts/energy-cron.js --status
+node scripts/energy-cron.js --close-once
+```
+
+Trên trình duyệt: mở `https://phubaimes.site/electric/catalog`, `/electric/live`, `/electric/reports`.
+
+## 7. Lưu ý riêng module điện năng
+
+- Từ cơ chế PUSH: **collector** (máy nhà máy) lo phần đọc Modbus + telemetry theo giờ; **cron VPS** chỉ còn chốt số + dọn telemetry. Không cần Gateway kết nối được từ VPS.
+- Trang realtime `/electric/live` đọc `PowerLiveReading` (bản đọc mới nhất do collector đẩy lên), độ trễ tối đa bằng `READ_INTERVAL_SECONDS`.
+- Cron chốt số lúc 06:00 giờ Việt Nam (`CLOSING_HOUR` trong `scripts/energy-cron.js`).
+- `ENERGY_API_KEY` phải giống nhau ở VPS và máy chạy collector, nếu lệch collector sẽ nhận 401.
+- Nếu đổi port `3002`: sửa `ecosystem.config.cjs`, Nginx và tài liệu này.
