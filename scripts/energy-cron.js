@@ -246,10 +246,69 @@ async function closeDailyRecords() {
 
     const prevTotal = Number(lastRecord.rows[0]?.currTotal ?? 0);
     const currTotal = Number(latestTelemetry.rows[0].totalEnergy ?? 0);
-    const isReset = currTotal < prevTotal;
-    const delta = isReset ? currTotal : Math.max(0, currTotal - prevTotal);
     const tu = Number(meter.tu ?? 1);
     const ti = Number(meter.ti ?? 1);
+
+    // Lần chốt ĐẦU TIÊN của đồng hồ (chưa có bản ghi kỳ trước để trừ): lưu chỉ số hiện tại
+    // làm MỐC GỐC (prev = curr, tiêu thụ = 0). Từ ngày sau mới lấy hiệu để ra sản lượng.
+    // Nếu không, ngày đầu sẽ tính nhầm cả chỉ số lũy kế của đồng hồ thành tiêu thụ 1 ngày.
+    if (lastRecord.rowCount === 0) {
+      await pool.query(
+        `insert into "PowerRecord" (
+           "id", "recordDate", "meterId", "dataSource", "prevTotal", "currTotal", "unitPrice", "isReset",
+           "consTotal", "consNormal", "consPeak", "consOffPeak", "costTotal", "note", "createdAt", "updatedAt"
+         ) values ($1, $2, $3, 'AUTO', $4, $5, $6, false, 0, null, null, null, 0, $7, now(), now())
+         on conflict ("recordDate", "meterId") do update set
+           "dataSource" = 'AUTO',
+           "prevTotal" = excluded."prevTotal",
+           "currTotal" = excluded."currTotal",
+           "unitPrice" = excluded."unitPrice",
+           "isReset" = false,
+           "consTotal" = 0,
+           "consNormal" = null,
+           "consPeak" = null,
+           "consOffPeak" = null,
+           "costTotal" = 0,
+           "note" = excluded."note",
+           "updatedAt" = now()`,
+        [newId("record"), recordDate, meter.id, currTotal, currTotal, unitPrice, "Chỉ số đầu kỳ (baseline) - chưa tính tiêu thụ"],
+      );
+      closed += 1;
+      console.log(`[Moc goc] ${meter.code}: luu chi so dau ky ${currTotal} kWh, chua tinh tieu thu.`);
+      continue;
+    }
+
+    const isReset = currTotal < prevTotal;
+
+    // Đồng hồ tụt số (nghi reset/thay/tràn): không tự tính tiêu thụ, ghi cờ + cảnh báo
+    // để người vận hành kiểm tra và nhập tay chỉ số cắt nếu cần (tránh tạo dữ liệu sai).
+    if (isReset) {
+      await pool.query(
+        `insert into "PowerRecord" (
+           "id", "recordDate", "meterId", "dataSource", "prevTotal", "currTotal", "unitPrice", "isReset",
+           "consTotal", "consNormal", "consPeak", "consOffPeak", "costTotal", "note", "createdAt", "updatedAt"
+         ) values ($1, $2, $3, 'AUTO', $4, $5, $6, true, 0, null, null, null, 0, $7, now(), now())
+         on conflict ("recordDate", "meterId") do update set
+           "dataSource" = 'AUTO',
+           "prevTotal" = excluded."prevTotal",
+           "currTotal" = excluded."currTotal",
+           "unitPrice" = excluded."unitPrice",
+           "isReset" = true,
+           "consTotal" = 0,
+           "consNormal" = null,
+           "consPeak" = null,
+           "consOffPeak" = null,
+           "costTotal" = 0,
+           "note" = excluded."note",
+           "updatedAt" = now()`,
+        [newId("record"), recordDate, meter.id, prevTotal, currTotal, unitPrice, "Nghi reset/thay đồng hồ (chỉ số mới < kỳ trước) - chưa tính tiêu thụ, cần kiểm tra & nhập tay"],
+      );
+      closed += 1;
+      console.log(`[Nghi reset] ${meter.code}: chi so moi ${currTotal} < ky truoc ${prevTotal}, chua tinh tieu thu, cho kiem tra.`);
+      continue;
+    }
+
+    const delta = Math.max(0, currTotal - prevTotal);
     const consTotal = delta * tu * ti;
 
     // Đồng hồ Hạ thế (type=1) đọc AUTO theo giờ: tách tiêu thụ theo 3 khung giá từ hourly telemetry

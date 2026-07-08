@@ -395,7 +395,7 @@ Migrations chính:
 - Them model Prisma `PowerLiveReading` (khoa chinh `meterId`, `totalEnergy`, `readAt` @db.Timestamptz, `updatedAt`) luu ban doc MOI NHAT cho realtime; migration `20260708090000_add_power_live_reading`.
 - Them endpoint may-toi-may bao ve bang header `x-api-key` (bien moi truong `ENERGY_API_KEY`):
   - `GET /api/collector/meters`: tra danh sach dong ho AUTO du cau hinh (isActive, isAuto, modbusId, gatewayIp) duoi dang `{ meters: [...] }`.
-  - `POST /api/collector/ingest`: nhan `{ readings: [{ meterId, totalEnergy, readAt }] }`, upsert `PowerLiveReading` (chi khi readAt moi hon ban dang luu) + insert `PowerTelemetry` theo gio (timestamp = readAt, chi ghi khi cach telemetry gan nhat >= 59 phut). Bo qua reading cua dong ho khong ton tai/du lieu sai.
+  - `POST /api/collector/ingest`: nhan `{ readings: [{ meterId, totalEnergy, readAt }] }`, upsert `PowerLiveReading` (chi khi readAt moi hon ban dang luu) + insert `PowerTelemetry` theo MOC GIO TRON (timestamp = readAt, chi luu ban doc DAU TIEN cua moi gio - so sanh hour bucket UTC, trung khop moc gio VN vi lech 7 tieng chan). Bo qua reading cua dong ho khong ton tai/du lieu sai.
 - Helper xac thuc collector: `src/lib/collector-auth.ts` (`requireCollectorKey`), tach rieng khoi `@/lib/permissions` (session NextAuth).
 - `src/middleware.ts` loai tru `api/collector` khoi auth NextAuth (route tu bao ve bang api-key), giong `api/auth`.
 - `GET /api/electric/live` viet lai: doc `PowerLiveReading` thay vi goi agent/Modbus. Bo phu thuoc `AGENT_URL`/`AGENT_TOKEN`. Giu dung shape `LiveData` (timestamp, totalEnergy, voltage/current/power/pf null, meter). Tra 404 khi chua co ban doc realtime.
@@ -407,7 +407,8 @@ Migrations chính:
 
 - Realtime = doc ban moi nhat tu `PowerLiveReading` (do collector day day moi ~60s), do tre chap nhan <= READ_INTERVAL_SECONDS. Nut realtime KHONG con cham Modbus qua mang.
 - Collector chi doc `totalEnergy` (2 input registers, parse Selec CDAB->ABCD) nen voltage/current/power tam thoi null tren realtime.
-- Telemetry lich su van giu nhip ~1 dong/gio/dong ho (nguong 59 phut trong ingest), khong phinh theo chu ky 60s cua collector.
+- Telemetry lich su lay theo MOC GIO TRON: moi gio luu 1 dong (ban doc dau tien cua gio do), giong cron cu `0 * * * *`, khong phinh theo chu ky 60s cua collector. Ingest gom telemetry bang hour bucket (`Math.floor(ms/3_600_000)`).
+- Prisma phai chay session `timezone=UTC` (cau hinh trong `src/lib/prisma.ts` qua `PrismaPg({ ..., options: "-c timezone=UTC" })`). Neu khong, session TZ mac dinh theo server (Postgres local Windows = Asia/Bangkok +7) lam Prisma ghi cot Timestamptz (`PowerTelemetry.timestamp`, `PowerLiveReading.readAt`) lech -7h. Cot `timestamp without time zone` nhu `PowerRecord.recordDate` khong bi anh huong.
 - `readAt` goc duoc giu lam `timestamp` telemetry va `readAt` live, nen buffer gui bu sau khi mat mang van dung moc thoi gian.
 - Endpoint `/api/collector/*` la kenh may-toi-may, chi xac thuc bang `x-api-key`; khong dung session/role.
 - Chot so hang ngay (`closeDailyRecords`) khong doi logic, chi doi cho chay: nay chi con o cron server (doc DB local), khong con thu Modbus.
@@ -424,3 +425,35 @@ Migrations chính:
 | --- | --- | --- | --- |
 | 2026-07-08 | Chuyen thu thap dien sang PUSH HTTPS: them model PowerLiveReading + migration, endpoint /api/collector/meters + /api/collector/ingest (x-api-key), sua /api/electric/live doc DB, bo lich collect theo gio khoi cron server, them collector energy-push-collector.js, loai api/collector khoi middleware. | `prisma/schema.prisma`, `prisma/migrations/20260708090000_add_power_live_reading/migration.sql`, `src/lib/collector-auth.ts`, `src/app/api/collector/meters/route.ts`, `src/app/api/collector/ingest/route.ts`, `src/app/api/electric/live/route.ts`, `src/middleware.ts`, `scripts/energy-cron.js`, `scripts/energy-push-collector.js`, `.gitignore`, `.env` | `npx prisma migrate deploy`, `npx prisma generate`, `node --check scripts/energy-cron.js`, `node --check scripts/energy-push-collector.js`, `npx eslint` cac route moi, `npm run build`, smoke: GET/POST /api/collector/* voi x-api-key (401 khong key, 200 co key, ingest upsert live + telemetry theo gio) |
 | 2026-07-08 | Don tan du kien truc Windows: xoa GitHub Actions workflow (chuyen han sang deploy thu cong tren VPS), viet lai ecosystem.config.cjs cho VPS Linux (2 process phubai-mes + phubai-mes-energy-cron, bo windowsHide/D:appspaths), cap nhat huong dan deploy theo VPS Ubuntu + kien truc PUSH. | `.github/workflows/deploy.yml` (deleted), `ecosystem.config.cjs`, `HUONG-DAN-DEPLOY-PHUBAI-MES.md`, `BUSINESS_LOGIC_CONTEXT.md` | `node -e "require(./ecosystem.config.cjs)"`, doc review, `git rm` workflow |
+
+## 2026-07-08 - Xu ly ban ghi MOC GOC (baseline) cho lan chot/nhap chi so dau tien
+
+### Current State Update
+
+- Them nhanh baseline cho ca AUTO va MANUAL: khi mot dong ho CHUA co `PowerRecord` ky truoc, lan chot/nhap dau tien chi luu chi so hien tai lam MOC GOC (prev = curr), `consTotal = 0`, `costTotal = 0`, khong phat sinh tieu thu; danh dau bang `note = "Chi so dau ky (baseline) - chua tinh tieu thu"`. Tu ky sau moi lay hieu de tinh san luong.
+- `scripts/energy-cron.js` (`closeDailyRecords`): neu `lastRecord.rowCount === 0` -> insert record baseline (upsert, `cons* = 0`) roi `continue`, khong tinh delta/khung gia; tranh loi ngay dau tinh nham ca chi so luy ke thanh tieu thu 1 ngay.
+- `src/lib/energy-record.ts` (`buildPowerRecordValues`): them nhanh baseline cho type=1 (khi khong co lastRecord VA nguoi dung khong tu nhap `prevTotal`) va type=2 (khi khong co lastRecord -> set MOC GOC cho ca 3 tier Binh thuong/Cao diem/Thap diem). Helper tra them field `note`.
+- `src/app/api/energy/records/route.ts`: doi `note: body.note || null` thanh `note: body.note || values.note || null` de note baseline tu helper duoc ghi khi nguoi dung khong nhap note rieng.
+
+### Business Rules Update
+
+- Dieu kien nhan biet "lan dau" la KHONG co `PowerRecord` ky truoc (`recordDate < ngay dang chot`), KHONG dua vao `PowerTelemetry` (voi co che PUSH, telemetry da co san truoc khi chot lan dau nen khong dung lam moc baseline).
+- Ban ghi baseline khong phat sinh chi phi nen khong can chot gia; gia chi ap khi thuc su co consumption.
+- Type=2 (Trung the, MANUAL-only): baseline phai set dong thoi ca 3 thanh ghi, neu khong lan tinh dau tien se lech tier.
+- MANUAL type=1 van cho phep nhap tay `prevTotal` (chi so dau ky da biet) de tinh tieu thu ngay tu ngay dau; khi do khong coi la baseline.
+- Chinh sach reset (`curr < prev` -> cons = curr) GIU NGUYEN, chua doi trong lan nay (tach thanh quyet dinh nghiep vu rieng neu can).
+
+### Feature Ledger Update
+
+| Ngay | Thay doi | File chinh | Verify |
+| --- | --- | --- | --- |
+| 2026-07-08 | Them xu ly ban ghi MOC GOC (baseline) cho lan chot/nhap dau tien: AUTO (cron) va MANUAL (helper) chi luu chi so lam moc, tieu thu = 0, danh dau bang note; tranh ngay dau tinh nham chi so luy ke thanh tieu thu. | `scripts/energy-cron.js`, `src/lib/energy-record.ts`, `src/app/api/energy/records/route.ts`, `BUSINESS_LOGIC_CONTEXT.md` | `node --check scripts/energy-cron.js`, `npx eslint src/lib/energy-record.ts src/app/api/energy/records/route.ts`, `npm run build`, smoke: chot/nhap lan dau -> record co cons=0 + note baseline; ngay ke tinh delta binh thuong |
+
+### Bo sung: Xu ly reset/thay dong ho (chi so moi < ky truoc)
+
+- Truoc day: khi `curr < prev` he thong tu coi `consTotal = curr` (gia dinh dong ho ve 0 dau ky). Rui ro: thoi phong khi thay dong ho co chi so khoi tao != 0, hoac reset giua ngay.
+- Nay: khi phat hien tut so (AUTO trong `closeDailyRecords`, MANUAL trong `buildPowerRecordValues` type=1 va type=2), KHONG tu tinh tieu thu: ghi record voi `consTotal = 0` (ca 3 tier = 0 voi type=2), `costTotal = 0`, `isReset = true`, va `note = "Nghi reset/thay dong ho (chi so moi < ky truoc) - chua tinh tieu thu, can kiem tra & nhap tay"`. Van luu prev/curr that de nguoi van hanh thay va xu ly.
+- MANUAL van cho nguoi van hanh nhap tay de tinh dung khi da biet chi so cat (vd nhap `prevTotal` phu hop cho type=1).
+
+| 2026-07-08 | Xu ly reset/thay dong ho: khi chi so moi < ky truoc thi khong tu tinh tieu thu (cons=0, isReset=true, note canh bao) o ca AUTO (cron) va MANUAL (helper type=1/type=2), thay cho hanh vi cu cons=curr de tranh du lieu sai. | `scripts/energy-cron.js`, `src/lib/energy-record.ts`, `BUSINESS_LOGIC_CONTEXT.md` | `node --check scripts/energy-cron.js`, `npx eslint src/lib/energy-record.ts`, `npm run build`, smoke: chot/nhap voi chi so tut -> record cons=0 + isReset + note canh bao |
+| 2026-07-08 | Telemetry lay theo moc gio tron (ban doc dau moi gio thay vi nguong 59 phut) va sua bug Prisma ghi Timestamptz lech -7h bang cach ep session timezone=UTC. | `src/app/api/collector/ingest/route.ts`, `src/lib/prisma.ts`, `BUSINESS_LOGIC_CONTEXT.md` | `npx eslint`, `npm run build`, smoke ingest: 5 reading/3 gio => telemetryInserted=3 (dau moi gio); SQL kiem tra timestamp luu dung UTC khong lech |

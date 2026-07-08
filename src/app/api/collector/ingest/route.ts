@@ -2,9 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireCollectorKey } from "@/lib/collector-auth";
 import { prisma } from "@/lib/prisma";
 
-// Chi ghi them 1 dong PowerTelemetry moi khi ban doc cach ban telemetry gan nhat >= ~59 phut
-// (hoac chua co telemetry nao). Tranh phinh bang khi collector doc day moi 60s.
-const TELEMETRY_MIN_GAP_MS = 59 * 60 * 1000;
+// Telemetry lich su lay theo MOC GIO TRON: chi luu ban doc DAU TIEN cua moi gio
+// (vd ~08:00, ~09:00...), khong phinh bang du collector doc day moi 60s.
+// Moc gio tinh bang UTC; vi gio VN lech UTC dung 7 tieng chan nen moc gio tron UTC
+// trung khop moc gio tron VN.
+function hourBucket(ms: number) {
+  return Math.floor(ms / 3_600_000);
+}
 
 type IncomingReading = {
   meterId?: unknown;
@@ -63,15 +67,15 @@ export async function POST(request: NextRequest) {
   });
   const validMeters = new Set(existingMeters.map((m) => m.id));
 
-  // Moc telemetry gan nhat hien co cua tung dong ho.
+  // Moc gio tron cua telemetry gan nhat hien co cua tung dong ho.
   const lastTelemetry = await prisma.powerTelemetry.groupBy({
     by: ["meterId"],
     where: { meterId: { in: meterIds } },
     _max: { timestamp: true },
   });
-  const lastTelemetryTs = new Map<string, number>();
+  const lastTelemetryBucket = new Map<string, number>();
   for (const row of lastTelemetry) {
-    if (row._max.timestamp) lastTelemetryTs.set(row.meterId, row._max.timestamp.getTime());
+    if (row._max.timestamp) lastTelemetryBucket.set(row.meterId, hourBucket(row._max.timestamp.getTime()));
   }
 
   // Moc live hien co de khong de ban doc cu dan len ban doc moi hon.
@@ -113,9 +117,10 @@ export async function POST(request: NextRequest) {
       liveUpdated += 1;
     }
 
-    // 2) Ghi telemetry lich su theo gio.
-    const lastTs = lastTelemetryTs.get(reading.meterId);
-    if (lastTs === undefined || readTs - lastTs >= TELEMETRY_MIN_GAP_MS) {
+    // 2) Ghi telemetry lich su: chi luu ban doc DAU TIEN cua moi gio tron.
+    const readBucket = hourBucket(readTs);
+    const lastBucket = lastTelemetryBucket.get(reading.meterId);
+    if (lastBucket === undefined || readBucket > lastBucket) {
       await prisma.powerTelemetry.create({
         data: {
           meterId: reading.meterId,
@@ -123,7 +128,7 @@ export async function POST(request: NextRequest) {
           timestamp: reading.readAt,
         },
       });
-      lastTelemetryTs.set(reading.meterId, readTs);
+      lastTelemetryBucket.set(reading.meterId, readBucket);
       telemetryInserted += 1;
     }
   }

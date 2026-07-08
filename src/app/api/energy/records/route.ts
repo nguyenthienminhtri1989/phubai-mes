@@ -98,14 +98,14 @@ export async function POST(request: NextRequest) {
     update: {
       ...values,
       dataSource: PowerDataSource.MANUAL,
-      note: body.note || null,
+      note: body.note || values.note || null,
     },
     create: {
       recordDate,
       meterId,
       ...values,
       dataSource: PowerDataSource.MANUAL,
-      note: body.note || null,
+      note: body.note || values.note || null,
     },
     include: {
       meter: true,

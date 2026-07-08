@@ -11,7 +11,11 @@ if (!connectionString) {
   throw new Error("DATABASE_URL is required to initialize Prisma Client.");
 }
 
-const adapter = new PrismaPg({ connectionString });
+// Ep session timezone = UTC cho moi ket noi Prisma. Neu khong, session TZ mac dinh
+// theo server (vd Postgres local Windows la Asia/Bangkok +7) khien Prisma ghi cac cot
+// Timestamptz (PowerTelemetry.timestamp, PowerLiveReading.readAt) bi lech -7h. Ep UTC
+// giup ghi/doc dung moc thoi gian, dong bo giua may dev (+7) va VPS.
+const adapter = new PrismaPg({ connectionString, options: "-c timezone=UTC" });
 
 export const prisma = globalForPrisma.prisma ?? new PrismaClient({ adapter });
 

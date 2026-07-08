@@ -4,28 +4,28 @@ import path from "node:path";
 import ModbusRTU from "modbus-serial";
 
 // ============================================================
-// Energy Push Collector — co che PUSH (thay the phan thu telemetry cua energy-cron.js)
+// Energy Push Collector — cơ chế PUSH (thay thế phần thu telemetry của energy-cron.js)
 //
-// Chay tai noi CO THE ket noi gateway Modbus (hien tai: may van phong;
-// sau nay: mini PC dat tai nha may). Day la tien trinh DUY NHAT can chay
-// o phia nha may — KHONG con SSH tunnel, KHONG ket noi truc tiep DB.
+// Chạy tại nơi CÓ THỂ kết nối gateway Modbus (hiện tại: máy văn phòng;
+// sau này: mini PC đặt tại nhà máy). Đây là tiến trình DUY NHẤT cần chạy
+// ở phía nhà máy — KHÔNG còn SSH tunnel, KHÔNG kết nối trực tiếp DB.
 //
-// Moi chu ky:
-//   1. GET danh sach dong ho AUTO tu VPS  (thay cho viec query DB truoc day)
-//   2. Doc Modbus tung dong ho
-//   3. POST ket qua len VPS qua HTTPS (kem API key)
-//   4. Neu POST loi (mat mang) -> luu vao file buffer, lan sau gui lai
+// Mỗi chu kỳ:
+//   1. GET danh sách đồng hồ AUTO từ VPS (thay cho việc query DB trước đây)
+//   2. Đọc Modbus từng đồng hồ
+//   3. POST kết quả lên VPS qua HTTPS (kèm API key)
+//   4. Nếu POST lỗi (mất mạng) -> lưu vào file buffer, lần sau gửi lại
 //
-// Toan bo giao tiep voi VPS chi la HTTPS ra ngoai (cong 443) — cuc on dinh,
-// khong can mo port nao, khong tunnel.
+// Toàn bộ giao tiếp với VPS chỉ là HTTPS ra ngoài (cổng 443) — cực ổn định,
+// không cần mở port nào, không tunnel.
 //
-// .env can co (cung thu muc chay collector):
+// .env cần có (cùng thư mục chạy collector):
 //   API_BASE_URL=https://phubaimes.site
 //   ENERGY_API_KEY=<khop voi VPS>
 //   READ_INTERVAL_SECONDS=60
 // ============================================================
 
-const API_BASE = (process.env.API_BASE_URL || "").replace(/\/+$/, ""); // vd https://phubaimes.site
+const API_BASE = (process.env.API_BASE_URL || "").replace(/\/+$/, ""); // ví dụ https://phubaimes.site
 const API_KEY = process.env.ENERGY_API_KEY || "";
 const INTERVAL_MS = Number(process.env.READ_INTERVAL_SECONDS || 60) * 1000;
 const MODBUS_TIMEOUT_MS = Number(process.env.MODBUS_TIMEOUT_MS || 2500);
@@ -38,7 +38,7 @@ function nowVN() {
   return new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
 }
 
-// Giai ma float theo dinh dang thanh ghi dong ho Selec (giu nguyen logic cu).
+// Giải mã float theo định dạng thanh ghi đồng hồ Selec (giữ nguyên logic cũ).
 function parseSelecFloat(buffer, offset = 0) {
   const fixed = Buffer.alloc(4);
   fixed[0] = buffer[offset + 2];
@@ -48,7 +48,7 @@ function parseSelecFloat(buffer, offset = 0) {
   return fixed.readFloatBE(0);
 }
 
-// Lay danh sach dong ho AUTO tu VPS (thay cho query DB "PowerMeter" truoc day).
+// Lấy danh sách đồng hồ AUTO từ VPS (thay cho query DB "PowerMeter" trước đây).
 async function fetchMeters() {
   const res = await fetch(`${API_BASE}/api/collector/meters`, {
     headers: { "x-api-key": API_KEY },
@@ -60,7 +60,7 @@ async function fetchMeters() {
   return Array.isArray(data.meters) ? data.meters : [];
 }
 
-// Doc Modbus toan bo dong ho, gom theo gateway. Tra ve mang readings.
+// Đọc Modbus toàn bộ đồng hồ, gom theo gateway. Trả về mảng readings.
 async function readAllMeters(meters) {
   const gateways = new Map();
   for (const m of meters) {
@@ -104,7 +104,7 @@ async function readAllMeters(meters) {
   return readings;
 }
 
-// Doc cac reading con ton trong buffer (do lan truoc gui loi).
+// Đọc các reading còn tồn trong buffer (do lần trước gửi lỗi).
 function loadBuffer() {
   try {
     if (!fs.existsSync(BUFFER_FILE)) return [];
@@ -124,11 +124,11 @@ function clearBuffer() {
   try {
     if (fs.existsSync(BUFFER_FILE)) fs.unlinkSync(BUFFER_FILE);
   } catch {
-    /* ignore */
+    /* bỏ qua */
   }
 }
 
-// Day readings len VPS. Tra ve true neu thanh cong.
+// Đẩy readings lên VPS. Trả về true nếu thành công.
 async function pushReadings(readings) {
   if (readings.length === 0) return true;
   const res = await fetch(`${API_BASE}/api/collector/ingest`, {
@@ -162,10 +162,10 @@ async function runCycle() {
 
     try {
       await pushReadings(all);
-      clearBuffer(); // gui thanh cong -> xoa buffer cu
+      clearBuffer(); // gửi thành công -> xóa buffer cũ
       console.log(`Da day ${all.length} ban ghi len VPS${buffered.length ? ` (gom ${buffered.length} ban ghi ton dong)` : ""}.`);
     } catch (pushErr) {
-      // Gui loi (thuong do mat mang) -> chi luu phan MOI vao buffer (phan cu da co san trong file)
+      // Gửi lỗi (thường do mất mạng) -> chỉ lưu phần MỚI vào buffer (phần cũ đã có sẵn trong file)
       saveToBuffer(fresh);
       console.error(`Day len VPS that bai, da luu tam ${fresh.length} ban ghi vao buffer. Loi: ${pushErr.message}`);
     }
