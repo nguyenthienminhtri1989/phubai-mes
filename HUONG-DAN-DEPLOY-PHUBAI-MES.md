@@ -1,6 +1,6 @@
 # Hướng Dẫn Deploy PHUBAI-MES
 
-PHUBAI-MES chạy trên **VPS Ubuntu (AZDIGI)** và deploy **thủ công qua Git**: sửa code ở máy dev → push lên `main` → SSH vào VPS `git pull` + build + restart PM2. Không dùng GitHub Actions (workflow cũ đã xóa).
+PHUBAI-MES chạy trên **VPS Ubuntu (AZDIGI)** và deploy **thủ công qua Git**: sửa code ở máy dev → push lên `main` → SSH vào VPS `git pull` + build + reload PM2 theo `ecosystem.config.cjs`. Không dùng GitHub Actions (workflow cũ đã xóa).
 
 ## 1. Kiến trúc
 
@@ -102,17 +102,27 @@ npm ci                      # chỉ khi package.json / package-lock.json đổi
 npx prisma migrate deploy   # áp migration mới (KHÔNG dùng prisma migrate dev trên production)
 npx prisma generate
 npm run build
-pm2 restart phubai-mes
+pm2 reload ecosystem.config.cjs --only phubai-mes --update-env
 # nếu có thay đổi liên quan cron:
-pm2 restart phubai-mes-energy-cron
+pm2 reload ecosystem.config.cjs --only phubai-mes-energy-cron --update-env
 pm2 save
 ```
+
+Luôn reload/start qua `ecosystem.config.cjs` để PM2 dùng đúng `script` và `args` đang khai báo trong repo.
+Không dùng lệnh kiểu dưới đây cho web app:
+
+```bash
+pm2 start npm --name phubai-mes -- start -p 3002
+```
+
+`package.json` đã có `npm start = next start -p 3002`; nếu PM2 gọi thêm `start -p 3002`, Next có thể nhận dư tham số thành `next start -p 3002 3002` và hiểu `3002` là thư mục project.
 
 Lần đầu chạy PM2 (thay cho restart):
 
 ```bash
 cd /home/deploy/apps/phubai-mes
-pm2 start ecosystem.config.cjs
+pm2 start ecosystem.config.cjs --only phubai-mes
+pm2 start ecosystem.config.cjs --only phubai-mes-energy-cron
 pm2 save
 pm2 startup   # làm theo lệnh in ra để PM2 tự chạy lại khi VPS reboot
 ```
