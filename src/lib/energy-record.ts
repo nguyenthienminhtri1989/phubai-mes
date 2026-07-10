@@ -146,9 +146,14 @@ export async function buildPowerRecordValues(input: {
   const currTotal = input.currTotal ?? 0;
   const unitPrice = input.unitPrice ?? (await getNormalUnitPrice());
 
-  // Lần đầu tiên với đồng hồ Hạ thế: nếu chưa có bản ghi kỳ trước VÀ người dùng không tự
-  // nhập "chỉ số đầu kỳ" (prevTotal) thì đây là MỐC GỐC -> lưu chỉ số, tiêu thụ = 0.
-  if (!lastRecord && input.prevTotal == null) {
+  // "Chỉ số đầu kỳ" do người dùng chủ ý nhập chỉ hợp lệ khi > 0. Client của trang nhập tay
+  // LUÔN gửi prevTotal (mặc định 0 khi chưa có kỳ trước), nên 0/không có = KHÔNG có chỉ số
+  // đầu kỳ thủ công -> tránh dựa vào `== null` (vì 0 == null là false).
+  const hasManualPrev = input.prevTotal != null && input.prevTotal > 0;
+
+  // Lần đầu tiên với đồng hồ Hạ thế (chưa có bản ghi kỳ trước) VÀ người dùng không nhập
+  // chỉ số đầu kỳ: đây là MỐC GỐC -> lưu chỉ số hiện tại, tiêu thụ = 0 (không tính nhầm toàn bộ lũy kế).
+  if (!lastRecord && !hasManualPrev) {
     return {
       prevTotal: currTotal,
       currTotal,

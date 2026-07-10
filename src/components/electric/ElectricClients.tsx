@@ -835,13 +835,23 @@ function evaluateDraft(meter: ElectricMeter, draft?: DailyDraft): DraftEvaluatio
   if (Number.isNaN(curr)) {
     return { status: "empty", delta: 0, cons: 0, message: "Giá trị không hợp lệ" };
   }
-  const prev = Number(meter.lastRecord?.currTotal ?? 0);
-  const delta = draft.isReset ? curr : Math.max(0, curr - prev);
+  // Chưa có kỳ trước (lần đầu tuyệt đối): bản ghi MỐC GỐC, chưa tính tiêu thụ (khớp backend).
+  if (!meter.lastRecord) {
+    return { status: "warn", delta: 0, cons: 0, message: "Chỉ số đầu kỳ (mốc gốc) — chưa tính tiêu thụ." };
+  }
+  const prev = Number(meter.lastRecord.currTotal ?? 0);
+
+  // Tụt số / reset: backend không tính tiêu thụ, chờ kiểm tra & nhập tay.
+  if (draft.isReset || curr < prev) {
+    if (!draft.isReset) {
+      return { status: "error", delta: 0, cons: 0, message: "Chỉ số mới nhỏ hơn kỳ trước. Bật Reset nếu đã thay đồng hồ." };
+    }
+    return { status: "warn", delta: 0, cons: 0, message: "Reset/thay đồng hồ — chưa tính tiêu thụ, cần kiểm tra." };
+  }
+
+  const delta = Math.max(0, curr - prev);
   const cons = delta * (meter.tu || 1) * (meter.ti || 1);
   const avg = Number(meter.avgConsumption7d ?? 0);
-  if (!draft.isReset && curr < prev) {
-    return { status: "error", delta, cons, message: "Chỉ số mới nhỏ hơn kỳ trước. Bật Reset nếu đã thay đồng hồ." };
-  }
   if (cons === 0) {
     return { status: "warn", delta, cons, message: "Không có tiêu thụ so với kỳ trước." };
   }
@@ -1122,8 +1132,11 @@ export function ElectricDailyInputClient() {
     await loadMeters();
   };
 
+  const lvBaseline = currentMeter?.type !== 2 && !currentLastRecord && !(Number(watchedValues?.prevTotal || 0) > 0);
   const lowVoltageDelta = currentMeter?.type !== 2
-    ? ((watchedValues?.isReset ? Number(watchedValues?.currTotal || 0) : Math.max(0, Number(watchedValues?.currTotal || 0) - Number(watchedValues?.prevTotal || 0))) * (currentMeter?.tu || 1) * (currentMeter?.ti || 1))
+    ? (lvBaseline || watchedValues?.isReset
+        ? 0
+        : Math.max(0, Number(watchedValues?.currTotal || 0) - Number(watchedValues?.prevTotal || 0)) * (currentMeter?.tu || 1) * (currentMeter?.ti || 1))
     : 0;
   const mediumVoltageDelta = currentMeter?.type === 2
     ? ([
