@@ -35,6 +35,88 @@ export async function GET(request: NextRequest) {
   return NextResponse.json(data);
 }
 
+export async function DELETE(request: NextRequest) {
+  const guard = await requireEditor();
+  if (!guard.ok) return guard.response;
+
+  const { searchParams } = new URL(request.url);
+  const id = searchParams.get("id") || "";
+  if (!id) {
+    return NextResponse.json({ error: "Missing id" }, { status: 400 });
+  }
+
+  const record = await prisma.powerRecord.findUnique({
+    where: { id },
+    include: {
+      meter: {
+        include: {
+          factory: true,
+          transformer: true,
+          transformerUnit: { include: { transformer: true } },
+        },
+      },
+    },
+  });
+  if (!record) {
+    return NextResponse.json({ error: "Record not found" }, { status: 404 });
+  }
+
+  // Kiểm tra quyền theo nhà máy (khớp với kiểm tra của POST).
+  const sessionUser = guard.session.user as { role?: string; factoryIds?: string[] };
+  const meter = record.meter;
+
+  // Bản ghi AUTO (do cron chốt tự động): CHỈ ADMIN được xóa. EDITOR/MANAGER không được
+  // vì bản ghi AUTO gắn với telemetry và chuỗi chốt số, xóa nhầm dễ gây sai lệch hàng loạt.
+  if (record.dataSource === "AUTO" && sessionUser.role !== "ADMIN") {
+    return NextResponse.json(
+      {
+        error: "AUTO_RECORD_ADMIN_ONLY",
+        message: "Bản ghi tự động (AUTO) chỉ ADMIN mới được xóa.",
+      },
+      { status: 403 },
+    );
+  }
+
+  const meterFactoryId =
+    meter.factoryId ||
+    meter.transformer?.factoryId ||
+    meter.transformerUnit?.transformer?.factoryId ||
+    null;
+  const userFactoryIds = Array.isArray(sessionUser.factoryIds) ? sessionUser.factoryIds : [];
+  if (sessionUser.role !== "ADMIN" && userFactoryIds.length > 0 && (!meterFactoryId || !userFactoryIds.includes(meterFactoryId))) {
+    return NextResponse.json(
+      { error: "User is not allowed to modify records for this factory" },
+      { status: 403 },
+    );
+  }
+
+  // Cần thiết: không cho xóa nếu đồng hồ này đã có bản ghi cho ngày SAU (bản ghi này đang
+  // làm "kỳ trước" của chuỗi). Xóa sẽ làm vỡ delta downstream.
+  const laterRecords = await prisma.powerRecord.findMany({
+    where: {
+      meterId: record.meterId,
+      recordDate: { gt: record.recordDate },
+    },
+    orderBy: { recordDate: "asc" },
+    select: { recordDate: true },
+    take: 5,
+  });
+  if (laterRecords.length > 0) {
+    return NextResponse.json(
+      {
+        error: "BLOCKED_BY_LATER_RECORDS",
+        message:
+          "Không xóa được: đồng hồ này đã có bản ghi cho ngày sau. Hãy xóa từ ngày mới nhất về cũ.",
+        laterDates: laterRecords.map((r) => r.recordDate.toISOString().slice(0, 10)),
+      },
+      { status: 409 },
+    );
+  }
+
+  await prisma.powerRecord.delete({ where: { id } });
+  return NextResponse.json({ ok: true });
+}
+
 export async function POST(request: NextRequest) {
   const guard = await requireEditor();
   if (!guard.ok) return guard.response;

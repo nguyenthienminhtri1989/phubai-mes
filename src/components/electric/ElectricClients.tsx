@@ -47,7 +47,7 @@ import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
 import { useSession } from "next-auth/react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DonutChart, RankedBarChart, TrendLineChart } from "./Charts";
 import { MeterFace } from "./MeterFace";
 
@@ -898,7 +898,9 @@ export function ElectricDailyInputClient() {
   const [selectedTransformerUnit, setSelectedTransformerUnit] = useState<number>();
   const [selectedGroup, setSelectedGroup] = useState<string>();
   const [modeFilter, setModeFilter] = useState<"all" | "manual" | "auto">("all");
-  const [statusFilter, setStatusFilter] = useState<"needsInput" | "all" | "done">("needsInput");
+  const [statusFilter, setStatusFilter] = useState<"all" | "done">("all");
+  // Ref: giữ DOM input theo meterId để Enter có thể focus sang đồng hồ kế tiếp.
+  const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [keyword, setKeyword] = useState("");
   const [currentMeter, setCurrentMeter] = useState<ElectricMeter | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -983,7 +985,6 @@ export function ElectricDailyInputClient() {
     if (selectedGroup && meter.groupId !== selectedGroup) return false;
     if (modeFilter === "manual" && meter.isAuto) return false;
     if (modeFilter === "auto" && !meter.isAuto) return false;
-    if (statusFilter === "needsInput" && meter.todayRecord) return false;
     if (statusFilter === "done" && !meter.todayRecord) return false;
     if (!normalizedKeyword) return true;
     return [meter.code, meter.name, meter.meterNo || ""].some((value) => value.toLowerCase().includes(normalizedKeyword));
@@ -1116,6 +1117,29 @@ export function ElectricDailyInputClient() {
     setModalOpen(true);
   };
 
+  // Xóa bản ghi đã nhập (khi người dùng lỡ tay chọn sai ngày). Backend sẽ chặn
+  // nếu đồng hồ đã có bản ghi ngày sau (bảo vệ chuỗi delta).
+  const deleteInlineRecord = async (meter: ElectricMeter) => {
+    if (!canInputMeter(meter) || !meter.todayRecord) return;
+    try {
+      const res = await fetch("/api/electric/daily-input?id=" + encodeURIComponent(meter.todayRecord.id), { method: "DELETE" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        if (res.status === 409 && err?.error === "BLOCKED_BY_LATER_RECORDS") {
+          const dates = Array.isArray(err.laterDates) ? err.laterDates.slice(0, 3).join(", ") : "";
+          message.error("Không xóa được: đồng hồ đã có bản ghi ngày sau (" + dates + "...). Hãy xóa từ ngày mới nhất về cũ.");
+          return;
+        }
+        message.error(err?.message || err?.error || "Không xóa được bản ghi");
+        return;
+      }
+      message.success("Đã xóa bản ghi của " + meter.code + ". Nhớ chọn đúng ngày và nhập lại.");
+      await loadMeters();
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "Không xóa được");
+    }
+  };
+
   const saveRecord = async () => {
     if (currentMeter && !canInputMeter(currentMeter)) {
       message.warning("Chi duoc nhap lieu cho dong ho thuoc nha may cua user");
@@ -1161,7 +1185,7 @@ export function ElectricDailyInputClient() {
         </Row>
         <Row gutter={[12, 12]} style={{ marginTop: 12 }}>
           <Col xs={24} md={8}><Select allowClear placeholder="Nhóm đồng hồ" value={selectedGroup} onChange={setSelectedGroup} options={groups.map((item) => ({ label: item.name, value: item.id }))} style={{ width: "100%" }} /></Col>
-          <Col xs={24} md={8}><Segmented block options={[{ label: "Cần nhập", value: "needsInput" }, { label: "Tất cả", value: "all" }, { label: "Đã chốt", value: "done" }]} value={statusFilter} onChange={(value) => setStatusFilter(value as "needsInput" | "all" | "done")} /></Col>
+          <Col xs={24} md={8}><Segmented block options={[{ label: "Tất cả", value: "all" }, { label: "Đã chốt", value: "done" }]} value={statusFilter} onChange={(value) => setStatusFilter(value as "all" | "done")} /></Col>
           <Col xs={24} md={8}><Segmented block options={[{ label: "Tất cả", value: "all" }, { label: "MANUAL", value: "manual" }, { label: "AUTO", value: "auto" }]} value={modeFilter} onChange={(value) => setModeFilter(value as "all" | "manual" | "auto")} /></Col>
         </Row>
       </Card>
@@ -1228,7 +1252,8 @@ export function ElectricDailyInputClient() {
         pagination={{ pageSize: 15, showSizeChanger: true, pageSizeOptions: [10, 15, 25, 50] }}
         scroll={{ x: 1280 }}
         onRow={(record) => {
-          if (record.todayRecord) return { style: { background: "#fafafa" } };
+          // Đã chốt: nền xanh nhạt + viền trái đậm hơn để dễ liếc.
+          if (record.todayRecord) return { style: { background: "#f6ffed", borderLeft: "3px solid #52c41a" } };
           if (record.type === 2) return {};
           const evaluation = evaluateDraft(record, drafts[record.id]);
           return { style: DRAFT_ROW_STYLE[evaluation.status] };
@@ -1322,9 +1347,29 @@ export function ElectricDailyInputClient() {
                     style={{ width: "100%" }}
                     value={draft?.currTotal === "" || draft?.currTotal === undefined ? null : Number(draft.currTotal)}
                     onChange={(value) => updateDraft(record.id, { currTotal: value === null || value === undefined ? "" : String(value) })}
-                    onPressEnter={() => void saveInline(record)}
+                    onPressEnter={async () => {
+                      await saveInline(record);
+                      // Sau khi lưu xong, nhảy sang Ổ input của đồng hồ MANUAL kế tiếp CHƯA chốt
+                      // trong danh sách đang hiển thị (bỏ qua trung thế và những dòng đã chốt).
+                      setTimeout(() => {
+                        const list = displayedMeters;
+                        const idx = list.findIndex((m) => m.id === record.id);
+                        for (let i = idx + 1; i < list.length; i += 1) {
+                          const next = list[i];
+                          if (next.type === 2) continue;
+                          if (next.todayRecord) continue;
+                          const el = inputRefs.current[next.id];
+                          if (el) { el.focus(); el.select?.(); break; }
+                        }
+                      }, 0);
+                    }}
                     disabled={!canInputMeter(record)}
                     controls={false}
+                    ref={(el: unknown) => {
+                      // InputNumber của antd expose HTMLInputElement qua ref.input
+                      const anyEl = el as { input?: HTMLInputElement } | null;
+                      inputRefs.current[record.id] = anyEl?.input ?? null;
+                    }}
                   />
                   <Space size={6}>
                     <Switch
@@ -1368,7 +1413,19 @@ export function ElectricDailyInputClient() {
               if (!canInputMeter(record)) return <Tag color="default">Chi xem</Tag>;
               if (record.todayRecord) {
                 return (
-                  <Button icon={<EditOutlined />} onClick={() => openRecord(record)} size="small">Sửa</Button>
+                  <Space size={4}>
+                    <Button icon={<EditOutlined />} onClick={() => openRecord(record)} size="small">Sửa</Button>
+                    <Popconfirm
+                      title={"Xóa bản ghi " + dayjs(record.todayRecord.recordDate).format("DD/MM/YYYY") + "?"}
+                      description="Dùng khi lỡ chọn sai ngày. Sau khi xóa, chọn đúng ngày và nhập lại."
+                      okText="Xóa"
+                      cancelText="Hủy"
+                      okButtonProps={{ danger: true }}
+                      onConfirm={() => void deleteInlineRecord(record)}
+                    >
+                      <Button icon={<DeleteOutlined />} size="small" danger />
+                    </Popconfirm>
+                  </Space>
                 );
               }
               if (record.type === 2) {
