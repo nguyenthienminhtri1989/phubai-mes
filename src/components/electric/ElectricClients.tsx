@@ -2259,6 +2259,15 @@ export function ElectricDailyInputClient() {
       {/* Tắt hover cho dòng đã chốt ở bảng nhập liệu: hover mặc định Ant Design là xám nhạt
            gần trắng, đè lên nền xanh khiến người dùng tưởng chưa nhập. Giữ nền xanh khi hover. */}
       <style jsx global>{`
+        /* Nền xanh cho cả cell bình thường LẪN cell fixed (fix-left/fix-right).
+           Ant Design tách cell fixed thành lớp riêng để có nền trắng khi cuộn ngang,
+           nên nếu không đè tường minh, cột "Đồng hồ" và "Thao tác" sẽ vẫn trắng. */
+        .ant-table-tbody > tr.row-done > td,
+        .ant-table-tbody > tr.row-done > td.ant-table-cell-fix-left,
+        .ant-table-tbody > tr.row-done > td.ant-table-cell-fix-right {
+          background: #d9f7be !important;
+        }
+        /* Giữ nền xanh khi hover để tránh nhìn "hụt màu" (hover mặc định là xám nhạt). */
         .ant-table-tbody > tr.row-done:hover > td,
         .ant-table-tbody > tr.row-done > td.ant-table-cell-row-hover {
           background: #d9f7be !important;
