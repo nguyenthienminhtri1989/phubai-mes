@@ -3770,18 +3770,30 @@ export function ElectricReportsClient() {
   const [groupBy, setGroupBy] = useState<"day" | "month">("day");
   const [report, setReport] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [factories, setFactories] = useState<Factory[]>([]);
+  const [selectedFactoryId, setSelectedFactoryId] = useState<string>();
+
+  // Tải danh sách nhà máy đang dùng để đổ vào dropdown lọc.
+  useEffect(() => {
+    fetchJson<Factory[]>("/api/electric/factories")
+      .then((items) => setFactories(items.filter((item) => item.isActive)))
+      .catch(() => undefined);
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const url =
-        "/api/electric/reports?startDate=" +
-        range[0].format("YYYY-MM-DD") +
-        "&endDate=" +
-        range[1].format("YYYY-MM-DD") +
-        "&groupBy=" +
-        groupBy;
-      setReport(await fetchJson<ReportData>(url));
+      const params = new URLSearchParams({
+        startDate: range[0].format("YYYY-MM-DD"),
+        endDate: range[1].format("YYYY-MM-DD"),
+        groupBy,
+      });
+      if (selectedFactoryId) params.set("factoryId", selectedFactoryId);
+      setReport(
+        await fetchJson<ReportData>(
+          "/api/electric/reports?" + params.toString(),
+        ),
+      );
     } catch (error) {
       message.error(
         error instanceof Error
@@ -3791,7 +3803,7 @@ export function ElectricReportsClient() {
     } finally {
       setLoading(false);
     }
-  }, [range, groupBy]);
+  }, [range, groupBy, selectedFactoryId]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0);
@@ -3816,12 +3828,23 @@ export function ElectricReportsClient() {
     <>
       <PageTitle
         title="Báo cáo điện năng"
-        subtitle="Tổng hợp chỉ số chốt mỗi 8h sáng (tiêu thụ ngày hôm trước) theo nhà máy, trạm, đồng hồ và nhóm đồng hồ."
+        subtitle="Tổng hợp chỉ số chốt mỗi 6h sáng (tiêu thụ ngày hôm trước) theo nhà máy, trạm, đồng hồ và nhóm đồng hồ."
       />
       <Space wrap style={{ marginBottom: 16 }}>
         <DatePicker.RangePicker
           value={range}
           onChange={(value) => value && setRange(value as [Dayjs, Dayjs])}
+        />
+        <Select
+          allowClear
+          placeholder="Tất cả nhà máy"
+          style={{ minWidth: 200 }}
+          value={selectedFactoryId}
+          onChange={setSelectedFactoryId}
+          options={factories.map((item) => ({
+            label: item.name,
+            value: item.id,
+          }))}
         />
         <Segmented
           options={[
