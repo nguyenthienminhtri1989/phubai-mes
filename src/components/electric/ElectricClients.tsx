@@ -2256,6 +2256,14 @@ export function ElectricDailyInputClient() {
 
   return (
     <>
+      {/* Tắt hover cho dòng đã chốt ở bảng nhập liệu: hover mặc định Ant Design là xám nhạt
+           gần trắng, đè lên nền xanh khiến người dùng tưởng chưa nhập. Giữ nền xanh khi hover. */}
+      <style jsx global>{`
+        .ant-table-tbody > tr.row-done:hover > td,
+        .ant-table-tbody > tr.row-done > td.ant-table-cell-row-hover {
+          background: #d9f7be !important;
+        }
+      `}</style>
       <PageTitle
         title="Nhập chỉ số điện"
         subtitle="Lọc theo nhà máy / trạm / máy biến áp và nhập trực tiếp trên bảng. Hệ thống tự tính kWh, cảnh báo nếu nhập sai."
@@ -2501,11 +2509,13 @@ export function ElectricDailyInputClient() {
           pageSizeOptions: [10, 15, 25, 50],
         }}
         scroll={{ x: 1280 }}
+        rowClassName={(record) => (record.todayRecord ? "row-done" : "")}
         onRow={(record) => {
-          // Đã chốt: nền xanh nhạt + viền trái đậm hơn để dễ liếc.
+          // Đã chốt: nền xanh đậm hơn + viền trái đậm để dễ liếc. Hover được tắt
+          // qua class `row-done` ở CSS bên dưới để tránh nhìn "hụt màu" khi di chuột qua.
           if (record.todayRecord)
             return {
-              style: { background: "#f6ffed", borderLeft: "3px solid #52c41a" },
+              style: { background: "#d9f7be", borderLeft: "3px solid #52c41a" },
             };
           if (record.type === 2) return {};
           const evaluation = evaluateDraft(record, drafts[record.id]);
