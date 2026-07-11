@@ -291,6 +291,9 @@ type ReportData = {
 
 const fmtNumber = new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 });
 const fmtMoney = new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 });
+// Dùng RIÊNG cho trang nhập liệu: KHÔNG ngăn cách hàng nghìn (để tránh nhầm lẫn
+// giữa dấu chấm và dấu phẩy giữa các máy khác nhau), chỉ giữ dấu thập phân.
+const fmtInput = new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2, useGrouping: false });
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
@@ -1792,7 +1795,7 @@ function evaluateDraft(
       delta,
       cons,
       message:
-        "Cao bất thường so với TB 7 ngày (" + fmtNumber.format(avg) + " kWh).",
+        "Cao bất thường so với TB 7 ngày (" + fmtInput.format(avg) + " kWh).",
     };
   }
   if (avg > 0 && cons < avg * 0.25) {
@@ -1801,7 +1804,7 @@ function evaluateDraft(
       delta,
       cons,
       message:
-        "Thấp bất thường so với TB 7 ngày (" + fmtNumber.format(avg) + " kWh).",
+        "Thấp bất thường so với TB 7 ngày (" + fmtInput.format(avg) + " kWh).",
     };
   }
   return { status: "ok", delta, cons, message: "Chênh lệch hợp lệ." };
@@ -1826,7 +1829,7 @@ function DraftStatusChip({ evaluation }: { evaluation: DraftEvaluation }) {
   return (
     <Space direction="vertical" size={0} style={{ lineHeight: 1.2 }}>
       <Text strong style={{ fontSize: 15 }}>
-        {fmtNumber.format(evaluation.cons)} kWh
+        {fmtInput.format(evaluation.cons)} kWh
       </Text>
       <Tag color={color} style={{ margin: 0 }} icon={icon}>
         {evaluation.message}
@@ -2574,7 +2577,7 @@ export function ElectricDailyInputClient() {
               return (
                 <Space direction="vertical" size={0}>
                   <Text strong style={{ fontSize: 15 }}>
-                    {last ? fmtNumber.format(Number(last.currTotal)) : "---"}
+                    {last ? fmtInput.format(Number(last.currTotal)) : "---"}
                   </Text>
                   <Text type="secondary" style={{ fontSize: 12 }}>
                     {last
@@ -2583,7 +2586,7 @@ export function ElectricDailyInputClient() {
                   </Text>
                   {avg && avg > 0 ? (
                     <Text type="secondary" style={{ fontSize: 11 }}>
-                      TB 7 ngày: {fmtNumber.format(avg)} kWh
+                      TB 7 ngày: {fmtInput.format(avg)} kWh
                     </Text>
                   ) : null}
                 </Space>
@@ -2599,8 +2602,8 @@ export function ElectricDailyInputClient() {
                   <Space direction="vertical" size={0}>
                     <Text strong style={{ fontSize: 15, color: "#389e0d" }}>
                       {record.type === 2
-                        ? fmtNumber.format(Number(record.todayRecord.currTotal))
-                        : fmtNumber.format(
+                        ? fmtInput.format(Number(record.todayRecord.currTotal))
+                        : fmtInput.format(
                             Number(record.todayRecord.currTotal),
                           )}
                     </Text>
@@ -2701,7 +2704,7 @@ export function ElectricDailyInputClient() {
                 return (
                   <Space direction="vertical" size={0}>
                     <Text strong style={{ fontSize: 15, color: "#389e0d" }}>
-                      {fmtNumber.format(Number(record.todayRecord.consTotal))}
+                      {fmtInput.format(Number(record.todayRecord.consTotal))}
                     </Text>
                     <Text type="secondary" style={{ fontSize: 12 }}>
                       Đã tính
@@ -2880,7 +2883,7 @@ export function ElectricDailyInputClient() {
                   </Form.Item>
                   <Text type="secondary">
                     Trước:{" "}
-                    {fmtNumber.format(
+                    {fmtInput.format(
                       Number(currentLastRecord?.currNormal || 0),
                     )}
                   </Text>
@@ -2895,7 +2898,7 @@ export function ElectricDailyInputClient() {
                   </Form.Item>
                   <Text type="secondary">
                     Trước:{" "}
-                    {fmtNumber.format(Number(currentLastRecord?.currPeak || 0))}
+                    {fmtInput.format(Number(currentLastRecord?.currPeak || 0))}
                   </Text>
                 </Col>
                 <Col xs={24} md={8}>
@@ -2908,7 +2911,7 @@ export function ElectricDailyInputClient() {
                   </Form.Item>
                   <Text type="secondary">
                     Trước:{" "}
-                    {fmtNumber.format(
+                    {fmtInput.format(
                       Number(currentLastRecord?.currOffPeak || 0),
                     )}
                   </Text>
