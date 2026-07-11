@@ -2437,12 +2437,12 @@ export function ElectricDailyInputClient() {
           }
         />
       )}
-      {autoFallbackPending > 0 && errorCount === 0 && (
+      {autoFallbackPending > 0 && errorCount === 0 && selectedDate.isBefore(dayjs().startOf("day")) && (
         <Alert
           type="warning"
           showIcon
           style={{ marginBottom: 12 }}
-          message="Có đồng hồ AUTO chưa chốt. Nếu Gateway hoặc mạng lỗi, có thể nhập MANUAL tạm thời."
+          message="Có đồng hồ AUTO chưa chốt cho ngày này. Nếu Gateway hoặc mạng lỗi, có thể nhập MANUAL tạm thời."
         />
       )}
 
