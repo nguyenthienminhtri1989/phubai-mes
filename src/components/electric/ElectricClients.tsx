@@ -2269,6 +2269,9 @@ export function ElectricDailyInputClient() {
               onChange={(value) => value && setSelectedDate(value)}
               style={{ width: "100%" }}
               format="DD/MM/YYYY"
+              // Chỉ cho chọn từ hôm qua trở về quá khứ: ngày hôm nay và tương lai chưa kết thúc,
+              // chưa có đủ dữ liệu để chốt số.
+              disabledDate={(d) => !!d && !d.isBefore(dayjs().startOf("day"))}
             />
           </Col>
           <Col xs={24} md={6} lg={5}>
