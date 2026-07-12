@@ -2,6 +2,7 @@
 
 import {
   CheckCircleOutlined,
+  DeleteOutlined,
   ExclamationCircleOutlined,
   FilterOutlined,
   InfoCircleOutlined,
@@ -35,7 +36,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 const { Text, Title } = Typography;
 
-const fmtNumber = new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 });
+const fmtNumber = new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2, useGrouping: false });
 
 type Factory = { id: string; code: string; name: string; isActive: boolean };
 type Transformer = { id: string; code: string; name: string; factoryId?: string | null; factory?: Factory | null; isActive: boolean };
@@ -118,11 +119,17 @@ function evaluate(meter: ElectricMeter, draft?: DailyDraft): { status: DraftStat
   if (!draft || draft.currTotal === "") return { status: "empty", cons: 0, msg: "" };
   const curr = Number(draft.currTotal);
   if (Number.isNaN(curr)) return { status: "empty", cons: 0, msg: "" };
-  const prev = Number(meter.lastRecord?.currTotal ?? 0);
-  const delta = draft.isReset ? curr : Math.max(0, curr - prev);
+  // Chưa có kỳ trước: bản ghi MỐC GỐC, chưa tính tiêu thụ (khớp backend).
+  if (!meter.lastRecord) return { status: "warn", cons: 0, msg: "Chỉ số đầu kỳ (mốc gốc)" };
+  const prev = Number(meter.lastRecord.currTotal ?? 0);
+  // Tụt số / reset: backend không tính tiêu thụ, chờ kiểm tra.
+  if (draft.isReset || curr < prev) {
+    if (!draft.isReset) return { status: "error", cons: 0, msg: "Nhỏ hơn kỳ trước! Bật Reset nếu thay đồng hồ." };
+    return { status: "warn", cons: 0, msg: "Reset/thay đồng hồ - chưa tính tiêu thụ" };
+  }
+  const delta = Math.max(0, curr - prev);
   const cons = delta * (meter.tu || 1) * (meter.ti || 1);
   const avg = Number(meter.avgConsumption7d ?? 0);
-  if (!draft.isReset && curr < prev) return { status: "error", cons, msg: "Nhỏ hơn kỳ trước!" };
   if (cons === 0) return { status: "warn", cons, msg: "Không tiêu thụ" };
   if (avg > 0 && cons > avg * 3) return { status: "high", cons, msg: "Cao bất thường" };
   if (avg > 0 && cons < avg * 0.25) return { status: "low", cons, msg: "Thấp bất thường" };
@@ -172,7 +179,6 @@ export function MobileDailyInputClient() {
   const [selectedTransformer, setSelectedTransformer] = useState<string>();
   const [selectedTransformerUnit, setSelectedTransformerUnit] = useState<number>();
   const [selectedGroup, setSelectedGroup] = useState<string>();
-  const [statusFilter, setStatusFilter] = useState<"needsInput" | "all" | "done">("needsInput");
   const [loading, setLoading] = useState(false);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [savingAll, setSavingAll] = useState(false);
@@ -187,12 +193,24 @@ export function MobileDailyInputClient() {
       fetchJson<MeterGroup[]>("/api/electric/meter-groups"),
     ])
       .then(([f, t, tu, g]) => {
-        setFactories(f.filter((i) => i.isActive));
+        const activeFactories = f.filter((i) => i.isActive);
+        setFactories(activeFactories);
         setTransformers(t.filter((i) => i.isActive));
         setTransformerUnits(tu.filter((i) => i.isActive));
         setGroups(g.filter((i) => i.isActive));
+        // Mặc định chọn nhà máy đầu tiên trong quyền user (nếu có giới hạn),
+        // hoặc nhà máy đầu danh sách cho ADMIN.
+        setSelectedFactory((prev) => {
+          if (prev) return prev;
+          if (userFactoryIds.length > 0) {
+            const own = activeFactories.find((x) => userFactoryIds.includes(x.id));
+            if (own) return own.id;
+          }
+          return activeFactories[0]?.id;
+        });
       })
       .catch(() => message.error("Không tải được danh mục"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const filteredTransformers = useMemo(
@@ -245,10 +263,8 @@ export function MobileDailyInputClient() {
   const displayed = useMemo(() => meters.filter((m) => {
     if (m.type === 2) return false;
     if (selectedGroup && m.groupId !== selectedGroup) return false;
-    if (statusFilter === "needsInput" && m.todayRecord) return false;
-    if (statusFilter === "done" && !m.todayRecord) return false;
     return true;
-  }), [meters, selectedGroup, statusFilter]);
+  }), [meters, selectedGroup]);
 
   const totalMeters = meters.filter((m) => m.type !== 2).length;
   const doneCount = meters.filter((m) => m.type !== 2 && m.todayRecord).length;
@@ -315,7 +331,30 @@ export function MobileDailyInputClient() {
     await loadMeters();
   };
 
-  const activeFilterCount = [selectedFactory, selectedTransformer, selectedTransformerUnit, selectedGroup].filter(Boolean).length;
+  // Xóa bản ghi đã nhập (khi lỡ chọn sai ngày). Backend sẽ chặn nếu đồng hồ
+  // đã có bản ghi ngày sau (bảo vệ chuỗi delta), và chặn AUTO nếu không phải ADMIN.
+  const deleteRecord = async (meter: ElectricMeter) => {
+    if (!canEditDaily || !canInputMeter(meter, role, userFactoryIds) || !meter.todayRecord) return;
+    try {
+      const res = await fetch("/api/electric/daily-input?id=" + encodeURIComponent(meter.todayRecord.id), { method: "DELETE" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        if (res.status === 409 && err?.error === "BLOCKED_BY_LATER_RECORDS") {
+          const dates = Array.isArray(err.laterDates) ? err.laterDates.slice(0, 3).join(", ") : "";
+          message.error("Không xóa được: đồng hồ đã có bản ghi ngày sau (" + dates + "). Hãy xóa từ ngày mới nhất về cũ.");
+          return;
+        }
+        message.error(err?.message || err?.error || "Không xóa được bản ghi");
+        return;
+      }
+      message.success("Đã xóa bản ghi. Hãy chọn đúng ngày và nhập lại.");
+      await loadMeters();
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : "Lỗi xóa");
+    }
+  };
+
+  const activeFilterCount = [selectedTransformer, selectedTransformerUnit, selectedGroup].filter(Boolean).length;
 
   return (
     <div style={{ maxWidth: 480, margin: "0 auto" }}>
@@ -335,6 +374,8 @@ export function MobileDailyInputClient() {
               style={{ width: "100%" }}
               format="DD/MM/YYYY"
               size="large"
+              // Chỉ cho chọn từ hôm qua trở về quá khứ: hôm nay và tương lai chưa có đủ dữ liệu.
+              disabledDate={(d) => !!d && !d.isBefore(dayjs().startOf("day"))}
             />
           </Col>
           <Col>
@@ -357,15 +398,6 @@ export function MobileDailyInputClient() {
           <div style={{ marginTop: 8 }}>
             <Divider style={{ margin: "4px 0 8px" }} />
             <Space direction="vertical" size={8} style={{ width: "100%" }}>
-              <Select
-                allowClear
-                placeholder="Nhà máy"
-                value={selectedFactory}
-                onChange={(v) => { setSelectedFactory(v); setSelectedTransformer(undefined); setSelectedTransformerUnit(undefined); }}
-                options={factories.map((i) => ({ label: i.name, value: i.id }))}
-                style={{ width: "100%" }}
-                size="large"
-              />
               <Select
                 allowClear
                 showSearch
@@ -402,6 +434,18 @@ export function MobileDailyInputClient() {
         )}
       </Card>
 
+      {/* Chọn nhà máy dạng chip - luôn có 1 nhà máy được chọn, không có trạng thái "tất cả" */}
+      {factories.length > 0 && (
+        <Segmented
+          block
+          size="large"
+          value={selectedFactory ?? ""}
+          onChange={(v) => { setSelectedFactory(String(v)); setSelectedTransformer(undefined); setSelectedTransformerUnit(undefined); }}
+          options={factories.map((i) => ({ label: i.name, value: i.id }))}
+          style={{ marginBottom: 8 }}
+        />
+      )}
+
       {/* Progress bar */}
       <Card size="small" style={{ marginBottom: 8 }} styles={{ body: { padding: "8px 12px" } }}>
         <Row justify="space-between" align="middle">
@@ -430,20 +474,6 @@ export function MobileDailyInputClient() {
         </div>
       </Card>
 
-      {/* Status filter */}
-      <Segmented
-        block
-        size="large"
-        options={[
-          { label: "Chờ nhập (" + pendingCount + ")", value: "needsInput" },
-          { label: "Tất cả", value: "all" },
-          { label: "Đã chốt", value: "done" },
-        ]}
-        value={statusFilter}
-        onChange={(v) => setStatusFilter(v as "needsInput" | "all" | "done")}
-        style={{ marginBottom: 8 }}
-      />
-
       {/* Save all button */}
       {readyToSave > 0 && (
         <Popconfirm
@@ -468,7 +498,7 @@ export function MobileDailyInputClient() {
       {/* Meter cards */}
       {displayed.length === 0 && !loading && (
         <Card style={{ textAlign: "center", padding: 24 }}>
-          <Text type="secondary">{statusFilter === "done" ? "Chưa có đồng hồ nào được chốt" : "Tất cả đồng hồ đã được chốt!"}</Text>
+          <Text type="secondary">Không có đồng hồ nào khớp bộ lọc</Text>
         </Card>
       )}
 
@@ -486,7 +516,7 @@ export function MobileDailyInputClient() {
               size="small"
               style={{
                 borderLeft: `4px solid ${isDone ? "#10b981" : STATUS_BORDER[ev.status]}`,
-                opacity: isDone ? 0.75 : 1,
+                background: isDone ? "#d9f7be" : undefined,
               }}
               styles={{ body: { padding: "10px 12px" } }}
             >
@@ -517,20 +547,36 @@ export function MobileDailyInputClient() {
 
               {isDone ? (
                 /* Already done */
-                <Alert
-                  type="success"
-                  showIcon
-                  style={{ borderRadius: 8 }}
-                  message={
-                    <Space>
-                      <span>Đã chốt: <b>{fmtNumber.format(Number(meter.todayRecord!.currTotal))}</b></span>
-                      <Tag color={meter.todayRecord!.dataSource === "AUTO" ? "green" : "orange"} style={{ margin: 0 }}>
-                        {meter.todayRecord!.dataSource}
-                      </Tag>
-                      <span style={{ color: "#10b981" }}>{fmtNumber.format(Number(meter.todayRecord!.consTotal))} kWh</span>
-                    </Space>
-                  }
-                />
+                <>
+                  <Alert
+                    type="success"
+                    showIcon
+                    style={{ borderRadius: 8, marginBottom: 8 }}
+                    message={
+                      <Space>
+                        <span>Đã chốt: <b>{fmtNumber.format(Number(meter.todayRecord!.currTotal))}</b></span>
+                        <Tag color={meter.todayRecord!.dataSource === "AUTO" ? "green" : "orange"} style={{ margin: 0 }}>
+                          {meter.todayRecord!.dataSource}
+                        </Tag>
+                        <span style={{ color: "#10b981" }}>{fmtNumber.format(Number(meter.todayRecord!.consTotal))} kWh</span>
+                      </Space>
+                    }
+                  />
+                  {canEditDaily && canInputMeter(meter, role, userFactoryIds) && (
+                    <Popconfirm
+                      title={"Xóa bản ghi " + dayjs(meter.todayRecord!.recordDate).format("DD/MM/YYYY") + "?"}
+                      description="Dùng khi lỡ chọn sai ngày. Sau khi xóa, chọn đúng ngày và nhập lại."
+                      okText="Xóa"
+                      cancelText="Hủy"
+                      okButtonProps={{ danger: true }}
+                      onConfirm={() => void deleteRecord(meter)}
+                    >
+                      <Button icon={<DeleteOutlined />} danger block size="middle">
+                        Xóa bản ghi (lỡ chọn sai ngày)
+                      </Button>
+                    </Popconfirm>
+                  )}
+                </>
               ) : (
                 /* Input area */
                 <>

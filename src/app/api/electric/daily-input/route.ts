@@ -1,1 +1,1 @@
-export { GET, POST } from "../../energy/records/route";
+export { GET, POST, DELETE } from "../../energy/records/route";
