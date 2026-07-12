@@ -1858,7 +1858,6 @@ export function ElectricDailyInputClient() {
   const [modeFilter, setModeFilter] = useState<"all" | "manual" | "auto">(
     "all",
   );
-  const [statusFilter, setStatusFilter] = useState<"all" | "done">("all");
   // Ref: giữ DOM input theo meterId để Enter có thể focus sang đồng hồ kế tiếp.
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [keyword, setKeyword] = useState("");
@@ -1893,15 +1892,28 @@ export function ElectricDailyInputClient() {
           nextTransformerUnits,
           nextGroups,
         ]) => {
-          setFactories(nextFactories.filter((item) => item.isActive));
+          const activeFactories = nextFactories.filter((item) => item.isActive);
+          setFactories(activeFactories);
           setTransformers(nextTransformers.filter((item) => item.isActive));
           setTransformerUnits(
             nextTransformerUnits.filter((item) => item.isActive),
           );
           setGroups(nextGroups.filter((item) => item.isActive));
+          // Mặc định chọn sẵn một nhà máy để không bao giờ hiển thị trạng thái "không chọn":
+          // ưu tiên nhà máy đầu tiên trong quyền của user (nếu có giới hạn),
+          // nếu ADMIN hoặc không giới hạn thì lấy nhà máy đầu danh sách.
+          setSelectedFactory((prev) => {
+            if (prev) return prev; // user đã chọn rồi thì không đổi
+            if (userFactoryIds.length > 0) {
+              const own = activeFactories.find((f) => userFactoryIds.includes(f.id));
+              if (own) return own.id;
+            }
+            return activeFactories[0]?.id;
+          });
         },
       )
       .catch(() => message.error("Không tải được danh mục điện năng"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const filteredTransformers = useMemo(
@@ -2001,13 +2013,12 @@ export function ElectricDailyInputClient() {
         if (selectedGroup && meter.groupId !== selectedGroup) return false;
         if (modeFilter === "manual" && meter.isAuto) return false;
         if (modeFilter === "auto" && !meter.isAuto) return false;
-        if (statusFilter === "done" && !meter.todayRecord) return false;
         if (!normalizedKeyword) return true;
         return [meter.code, meter.name, meter.meterNo || ""].some((value) =>
           value.toLowerCase().includes(normalizedKeyword),
         );
       }),
-    [meters, selectedGroup, modeFilter, statusFilter, keyword],
+    [meters, selectedGroup, modeFilter, keyword],
   );
 
   const totalMeters = meters.length;
@@ -2291,21 +2302,18 @@ export function ElectricDailyInputClient() {
               disabledDate={(d) => !!d && !d.isBefore(dayjs().startOf("day"))}
             />
           </Col>
-          <Col xs={24} md={6} lg={5}>
-            <Select
-              allowClear
-              placeholder="Nhà máy"
-              value={selectedFactory}
+          <Col xs={24} md={18} lg={11}>
+            {/* Chọn nhà máy dạng chip - luôn có 1 nhà máy được chọn, không có trạng thái "tất cả"
+                vì mỗi lượt nhập liệu chỉ tập trung 1 nhà máy. */}
+            <Segmented
+              block
+              value={selectedFactory ?? ""}
               onChange={(value) => {
-                setSelectedFactory(value);
+                setSelectedFactory(String(value));
                 setSelectedTransformer(undefined);
                 setSelectedTransformerUnit(undefined);
               }}
-              options={factories.map((item) => ({
-                label: item.name,
-                value: item.id,
-              }))}
-              style={{ width: "100%" }}
+              options={factories.map((item) => ({ label: item.name, value: item.id }))}
             />
           </Col>
           <Col xs={24} md={8} lg={6}>
@@ -2376,18 +2384,7 @@ export function ElectricDailyInputClient() {
               style={{ width: "100%" }}
             />
           </Col>
-          <Col xs={24} md={8}>
-            <Segmented
-              block
-              options={[
-                { label: "Tất cả", value: "all" },
-                { label: "Đã chốt", value: "done" },
-              ]}
-              value={statusFilter}
-              onChange={(value) => setStatusFilter(value as "all" | "done")}
-            />
-          </Col>
-          <Col xs={24} md={8}>
+          <Col xs={24} md={12}>
             <Segmented
               block
               options={[
