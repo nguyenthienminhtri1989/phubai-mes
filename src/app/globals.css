@@ -1,9 +1,9 @@
 ﻿@import "tailwindcss";
 
 :root {
-  /* Nền trang: slate-200 (Tailwind) - đậm rõ để các Card/ô lọc nền trắng nổi bật,
-     vẫn giữ tông trung tính để không gây mỏi mắt khi nhìn lâu. */
-  --background: #e2e8f0;
+  /* Nền trang cho các layout không dùng AdminLayout (login, mobile...).
+     Layout admin có biến COLORS.bg riêng trong AdminLayout.tsx - cần đồng bộ hai nơi. */
+  --background: #dde5f0;
   --foreground: #172033;
 }
 

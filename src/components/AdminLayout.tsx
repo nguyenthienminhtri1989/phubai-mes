@@ -38,7 +38,9 @@ import { ChangePasswordModal } from "./electric/ChangePasswordModal";
 
 // ─── Theme tokens ────────────────────────────────────────────────────────────
 const COLORS = {
-  bg: "#f5f7fb",
+  // Nền khu vực nội dung (main): đậm hơn các Card trắng để tạo tương phản rõ.
+  // Giữ tông xanh nhạt của bảng màu gốc để hài hòa với accent xanh.
+  bg: "#dde5f0",
   siderBg: "#ffffff",
   siderBorder: "#dbe5f0",
   headerBg: "rgba(255,255,255,0.96)",
