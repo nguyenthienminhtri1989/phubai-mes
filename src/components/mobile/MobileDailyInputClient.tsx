@@ -354,7 +354,7 @@ export function MobileDailyInputClient() {
     }
   };
 
-  const activeFilterCount = [selectedTransformer, selectedTransformerUnit, selectedGroup].filter(Boolean).length;
+  const activeFilterCount = [selectedTransformerUnit, selectedGroup].filter(Boolean).length;
 
   return (
     <div style={{ maxWidth: 480, margin: "0 auto" }}>
@@ -402,17 +402,6 @@ export function MobileDailyInputClient() {
                 allowClear
                 showSearch
                 optionFilterProp="label"
-                placeholder="Trạm biến áp"
-                value={selectedTransformer}
-                onChange={(v) => { setSelectedTransformer(v); setSelectedTransformerUnit(undefined); }}
-                options={filteredTransformers.map((i) => ({ label: i.factory ? i.factory.name + " - " + i.name : i.name, value: i.id }))}
-                style={{ width: "100%" }}
-                size="large"
-              />
-              <Select
-                allowClear
-                showSearch
-                optionFilterProp="label"
                 placeholder="Máy biến áp"
                 value={selectedTransformerUnit}
                 onChange={setSelectedTransformerUnit}
@@ -444,6 +433,37 @@ export function MobileDailyInputClient() {
           options={factories.map((i) => ({ label: i.name, value: i.id }))}
           style={{ marginBottom: 8 }}
         />
+      )}
+
+      {/* Lọc theo trạm biến áp trong nhà máy đã chọn.
+           - Nếu ≤ 4 trạm: hiện chip Segmented cho chọn nhanh 1 chạm (kèm "Tất cả").
+           - Nếu > 4 trạm: tự động rơi về Select để tránh chip chật/tràn trên màn hình hẹp. */}
+      {selectedFactory && filteredTransformers.length > 0 && (
+        filteredTransformers.length <= 4 ? (
+          <Segmented
+            block
+            size="large"
+            value={selectedTransformer ?? ""}
+            onChange={(v) => { setSelectedTransformer(v === "" ? undefined : String(v)); setSelectedTransformerUnit(undefined); }}
+            options={[
+              { label: "Tất cả trạm", value: "" },
+              ...filteredTransformers.map((i) => ({ label: i.name, value: i.id })),
+            ]}
+            style={{ marginBottom: 8 }}
+          />
+        ) : (
+          <Select
+            allowClear
+            showSearch
+            optionFilterProp="label"
+            placeholder="Tất cả trạm biến áp"
+            value={selectedTransformer}
+            onChange={(v) => { setSelectedTransformer(v); setSelectedTransformerUnit(undefined); }}
+            options={filteredTransformers.map((i) => ({ label: i.name, value: i.id }))}
+            style={{ width: "100%", marginBottom: 8 }}
+            size="large"
+          />
+        )
       )}
 
       {/* Progress bar */}
