@@ -2283,6 +2283,31 @@ export function ElectricDailyInputClient() {
         .ant-table-tbody > tr.row-done > td.ant-table-cell-row-hover {
           background: #d9f7be !important;
         }
+
+        /* Segmented (chip lọc): tăng tương phản giữa chip đang chọn và chip không chọn.
+           Mặc định Ant Design là trắng vs xám-trắng, nhìn thoáng qua khó phân biệt
+           - nhất là khi nền trang đã chuyển sang xám nhạt. */
+        .ant-segmented {
+          background: #e5ecf5;
+          padding: 3px;
+        }
+        .ant-segmented .ant-segmented-item {
+          color: #475569; /* chữ xám đậm cho chip không chọn - rõ hơn đen nhạt mặc định */
+          transition: color 0.2s, background 0.2s;
+        }
+        .ant-segmented .ant-segmented-item:hover:not(.ant-segmented-item-selected) {
+          color: #1677ff;
+          background: rgba(22, 119, 255, 0.08);
+        }
+        .ant-segmented .ant-segmented-item-selected {
+          background: #1677ff; /* nền xanh đậm cho chip đang chọn */
+          color: #ffffff;
+          font-weight: 600;
+          box-shadow: 0 2px 6px rgba(22, 119, 255, 0.35);
+        }
+        .ant-segmented .ant-segmented-item-selected .ant-segmented-item-label {
+          color: #ffffff;
+        }
       `}</style>
       <PageTitle
         title="Nhập chỉ số điện"
