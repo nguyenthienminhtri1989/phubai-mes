@@ -2291,7 +2291,7 @@ export function ElectricDailyInputClient() {
 
       <Card style={{ marginBottom: 16 }}>
         <Row gutter={[12, 12]} align="middle">
-          <Col xs={24} md={6} lg={4}>
+          <Col xs={24} md={6}>
             <DatePicker
               value={selectedDate}
               onChange={(value) => value && setSelectedDate(value)}
@@ -2302,7 +2302,7 @@ export function ElectricDailyInputClient() {
               disabledDate={(d) => !!d && !d.isBefore(dayjs().startOf("day"))}
             />
           </Col>
-          <Col xs={24} md={18} lg={11}>
+          <Col xs={24} md={13}>
             {/* Chọn nhà máy dạng chip - luôn có 1 nhà máy được chọn, không có trạng thái "tất cả"
                 vì mỗi lượt nhập liệu chỉ tập trung 1 nhà máy. */}
             <Segmented
@@ -2316,42 +2316,7 @@ export function ElectricDailyInputClient() {
               options={factories.map((item) => ({ label: item.name, value: item.id }))}
             />
           </Col>
-          <Col xs={24} md={8} lg={6}>
-            <Select
-              allowClear
-              showSearch
-              optionFilterProp="label"
-              placeholder="Trạm biến áp"
-              value={selectedTransformer}
-              onChange={(value) => {
-                setSelectedTransformer(value);
-                setSelectedTransformerUnit(undefined);
-              }}
-              options={filteredTransformers.map((item) => ({
-                label: item.factory
-                  ? item.factory.name + " - " + item.name
-                  : item.name,
-                value: item.id,
-              }))}
-              style={{ width: "100%" }}
-            />
-          </Col>
-          <Col xs={24} md={8} lg={5}>
-            <Select
-              allowClear
-              showSearch
-              optionFilterProp="label"
-              placeholder="Máy biến áp"
-              value={selectedTransformerUnit}
-              onChange={setSelectedTransformerUnit}
-              options={filteredDailyTransformerUnits.map((item) => ({
-                label: item.name,
-                value: item.id,
-              }))}
-              style={{ width: "100%" }}
-            />
-          </Col>
-          <Col xs={24} md={4} lg={3}>
+          <Col xs={24} md={5}>
             <Button
               icon={<ReloadOutlined />}
               onClick={loadMeters}
@@ -2361,15 +2326,46 @@ export function ElectricDailyInputClient() {
               Tải lại
             </Button>
           </Col>
-          <Col xs={24} lg={6}>
-            <Input.Search
-              allowClear
-              placeholder="Tìm mã, tên, serial"
-              value={keyword}
-              onChange={(event) => setKeyword(event.target.value)}
-            />
-          </Col>
         </Row>
+
+        {/* Hàng 2 - Lọc theo vị trí (trạm + máy biến áp) - chỉ hiện khi có trạm trong nhà máy đã chọn. */}
+        {filteredTransformers.length > 0 && (
+          <Row gutter={[12, 12]} align="middle" style={{ marginTop: 12 }}>
+            <Col xs={24} md={16}>
+              {/* Chọn trạm dạng chip Segmented: với tối đa 2 trạm/nhà máy hiện tại (+ "Tất cả") là 3 chip,
+                  bấm 1 lần nhanh hơn dropdown. */}
+              <Segmented
+                block
+                value={selectedTransformer ?? ""}
+                onChange={(value) => {
+                  setSelectedTransformer(value === "" ? undefined : String(value));
+                  setSelectedTransformerUnit(undefined);
+                }}
+                options={[
+                  { label: "Tất cả trạm", value: "" },
+                  ...filteredTransformers.map((item) => ({ label: item.name, value: item.id })),
+                ]}
+              />
+            </Col>
+            <Col xs={24} md={8}>
+              <Select
+                allowClear
+                showSearch
+                optionFilterProp="label"
+                placeholder="Máy biến áp"
+                value={selectedTransformerUnit}
+                onChange={setSelectedTransformerUnit}
+                options={filteredDailyTransformerUnits.map((item) => ({
+                  label: item.name,
+                  value: item.id,
+                }))}
+                style={{ width: "100%" }}
+              />
+            </Col>
+          </Row>
+        )}
+
+        {/* Hàng 3 - Lọc mềm (nhóm + chế độ + tìm kiếm). */}
         <Row gutter={[12, 12]} style={{ marginTop: 12 }}>
           <Col xs={24} md={8}>
             <Select
@@ -2384,7 +2380,7 @@ export function ElectricDailyInputClient() {
               style={{ width: "100%" }}
             />
           </Col>
-          <Col xs={24} md={12}>
+          <Col xs={24} md={10}>
             <Segmented
               block
               options={[
@@ -2396,6 +2392,14 @@ export function ElectricDailyInputClient() {
               onChange={(value) =>
                 setModeFilter(value as "all" | "manual" | "auto")
               }
+            />
+          </Col>
+          <Col xs={24} md={6}>
+            <Input.Search
+              allowClear
+              placeholder="Tìm mã, tên, serial"
+              value={keyword}
+              onChange={(event) => setKeyword(event.target.value)}
             />
           </Col>
         </Row>
@@ -2426,7 +2430,7 @@ export function ElectricDailyInputClient() {
             <Statistic
               title="Chưa chốt"
               value={pendingMeters}
-              suffix={manualPending + " MANUAL"}
+              suffix={"/ " + manualPending + " MANUAL"}
               valueStyle={{ color: pendingMeters ? "#cf1322" : "#389e0d" }}
             />
           </Card>
