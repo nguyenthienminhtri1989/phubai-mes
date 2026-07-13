@@ -249,28 +249,64 @@ type LiveData = {
   meter?: ElectricMeter;
 };
 
+/**
+ * Báo cáo điện năng chia làm 2 lớp và KHÔNG cộng vào nhau:
+ *  - billed* : số liệu công tơ Trung thế (EVN) — tiền THẬT, tính đúng 3 khung giá.
+ *  - internal*: tổng đồng hồ Hạ thế — điện đi đâu trong nhà máy. Chi phí của từng đồng hồ
+ *    hạ thế (`costTotal`) là chi phí ĐÃ PHÂN BỔ NGƯỢC từ hóa đơn EVN theo tỷ trọng kWh,
+ *    nên tổng lại luôn khớp hóa đơn. `costRaw` là con số cũ do đồng hồ tự tính (chỉ để đối chiếu).
+ */
 type ReportData = {
   summary: {
-    totalConsumption: number;
-    totalCost: number;
+    billedConsumption: number;
+    billedCost: number;
+    totalConsumption: number; // alias của billedConsumption
+    totalCost: number; // alias của billedCost
     totalNormal: number;
     totalPeak: number;
     totalOffPeak: number;
+    internalConsumption: number;
+    lossConsumption: number;
+    lossPercent: number;
+    hasNegativeLoss: boolean;
+    avgUnitPrice: number;
     avgPerDay: number;
     daysWithData: number;
+    mvMeterCount: number;
+    lvMeterCount: number;
     prevPeriodConsumption: number;
     trendPercent: number | null;
+    warnings: string[];
   };
-  byDate: Array<{ date: string; consTotal: number; costTotal: number }>;
+  byDate: Array<{
+    date: string;
+    consTotal: number;
+    costTotal: number;
+    internalCons: number;
+  }>;
   byMeter: Array<{
     meterId: string;
     meterCode: string;
     meterName: string;
+    meterType: number;
+    isAuto: boolean;
     factoryName?: string;
     groupName: string;
     substationName: string;
     transformerUnitName: string;
     consTotal: number;
+    costTotal: number;
+    costRaw: number;
+  }>;
+  byMvMeter?: Array<{
+    meterId: string;
+    meterCode: string;
+    meterName: string;
+    factoryName: string;
+    consTotal: number;
+    consNormal: number;
+    consPeak: number;
+    consOffPeak: number;
     costTotal: number;
   }>;
   byGroup?: Array<{
@@ -284,8 +320,15 @@ type ReportData = {
     factoryId: string | null;
     factoryCode: string;
     factoryName: string;
+    hasMv: boolean;
     consTotal: number;
     costTotal: number;
+    billedCons: number;
+    billedCost: number;
+    internalCons: number;
+    lossCons: number;
+    lossPercent: number;
+    avgUnitPrice: number;
   }>;
 };
 
@@ -3858,7 +3901,10 @@ export function ElectricReportsClient() {
     return () => window.clearTimeout(timer);
   }, [load]);
 
-  const trend = report?.summary.trendPercent;
+  const summary = report?.summary;
+  const trend = summary?.trendPercent;
+  const warnings = summary?.warnings || [];
+  // byMeter chỉ còn đồng hồ hạ thế (nội bộ); công tơ EVN nằm riêng ở byMvMeter.
   const topMeters = (report?.byMeter || []).slice(0, 8).map((m) => ({
     label: m.meterCode + " - " + m.meterName,
     value: m.consTotal,
@@ -3866,17 +3912,19 @@ export function ElectricReportsClient() {
   }));
   const topFactories = (report?.byFactory || [])
     .slice(0, 8)
-    .map((f) => ({ label: f.factoryName, value: f.consTotal }));
+    .map((f) => ({ label: f.factoryName, value: f.billedCons }));
+  // Tỷ trọng nhánh tốn nhiều nhất so với sản lượng đầu nguồn EVN.
   const topConsumerShare =
-    report && report.summary.totalConsumption > 0 && report.byMeter[0]
-      ? (report.byMeter[0].consTotal / report.summary.totalConsumption) * 100
+    summary && summary.billedConsumption > 0 && report?.byMeter[0]
+      ? (report.byMeter[0].consTotal / summary.billedConsumption) * 100
       : 0;
+  const hasNegativeLoss = summary?.hasNegativeLoss ?? false;
 
   return (
     <>
       <PageTitle
         title="Báo cáo điện năng"
-        subtitle="Tổng hợp chỉ số chốt mỗi 6h sáng (tiêu thụ ngày hôm trước) theo nhà máy, trạm, đồng hồ và nhóm đồng hồ."
+        subtitle="Chi phí lấy từ công tơ trung thế EVN (3 khung giá). Đồng hồ hạ thế dùng để phân bổ chi phí nội bộ theo tỷ trọng kWh."
       />
       <Space wrap style={{ marginBottom: 16 }}>
         <DatePicker.RangePicker
@@ -3907,12 +3955,29 @@ export function ElectricReportsClient() {
         </Button>
       </Space>
 
+      {warnings.length > 0 ? (
+        <Alert
+          type={hasNegativeLoss ? "error" : "warning"}
+          showIcon
+          icon={<WarningOutlined />}
+          style={{ marginBottom: 16 }}
+          message="Dữ liệu cần kiểm tra"
+          description={
+            <ul style={{ margin: 0, paddingLeft: 18 }}>
+              {warnings.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          }
+        />
+      ) : null}
+
       <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
         <Col xs={24} md={6}>
           <Card>
             <Statistic
-              title="Tổng tiêu thụ"
-              value={report?.summary.totalConsumption || 0}
+              title="Sản lượng EVN (đầu nguồn)"
+              value={summary?.billedConsumption || 0}
               precision={2}
               suffix="kWh"
               prefix={<ThunderboltOutlined />}
@@ -3935,32 +4000,54 @@ export function ElectricReportsClient() {
         <Col xs={24} md={6}>
           <Card>
             <Statistic
-              title="Chi phí điện"
-              value={report?.summary.totalCost || 0}
+              title="Chi phí điện (hóa đơn EVN)"
+              value={summary?.billedCost || 0}
               precision={0}
               suffix="VNĐ"
               prefix={<DollarOutlined />}
             />
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              Đơn giá bình quân thực tế{" "}
+              {fmtMoney.format(Math.round(summary?.avgUnitPrice || 0))} đ/kWh
+            </Text>
           </Card>
         </Col>
         <Col xs={24} md={6}>
           <Card>
             <Statistic
-              title="Trung bình/ngày"
-              value={report?.summary.avgPerDay || 0}
+              title="Tổn thất & chưa đo được"
+              value={summary?.lossConsumption || 0}
               precision={2}
               suffix="kWh"
-              prefix={<ApiOutlined />}
+              valueStyle={hasNegativeLoss ? { color: "#cf1322" } : undefined}
+              prefix={
+                hasNegativeLoss ? (
+                  <WarningOutlined style={{ color: "#cf1322" }} />
+                ) : (
+                  <ApiOutlined />
+                )
+              }
             />
+            <Text
+              type={hasNegativeLoss ? "danger" : "secondary"}
+              style={{ fontSize: 12 }}
+            >
+              {hasNegativeLoss
+                ? "Hạ thế VƯỢT đầu nguồn — kiểm tra TU/TI hoặc số EVN"
+                : (summary?.lossPercent || 0).toFixed(1) +
+                  "% — nội bộ đo được " +
+                  fmtNumber.format(summary?.internalConsumption || 0) +
+                  " kWh"}
+            </Text>
           </Card>
         </Col>
         <Col xs={24} md={6}>
           <Card>
             <Statistic
-              title="Đồng hồ tốn điện nhất"
+              title="Nhánh hạ thế tốn điện nhất"
               value={topConsumerShare}
               precision={1}
-              suffix="% tổng tiêu thụ"
+              suffix="% sản lượng EVN"
               prefix={<FireOutlined style={{ color: "#fa541c" }} />}
             />
             <Text type="secondary" style={{ fontSize: 12 }}>
@@ -3990,13 +4077,13 @@ export function ElectricReportsClient() {
 
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col xs={24} lg={12}>
-          <Card title="Top đồng hồ tiêu thụ nhiều nhất" loading={loading}>
+          <Card title="Top nhánh hạ thế tiêu thụ nhiều nhất" loading={loading}>
             <RankedBarChart data={topMeters} />
           </Card>
         </Col>
         <Col xs={24} lg={12}>
           <Card
-            title="Tỷ trọng theo khung giờ Bình thường/Cao điểm/Thấp điểm"
+            title="Tỷ trọng khung giờ theo công tơ EVN (Bình thường/Cao điểm/Thấp điểm)"
             loading={loading}
           >
             <DonutChart
@@ -4032,39 +4119,141 @@ export function ElectricReportsClient() {
         </Card>
       ) : null}
 
-      <Card title="Tổng hợp theo nhà máy" style={{ marginBottom: 16 }}>
+      <Card
+        title="Đối chiếu theo nhà máy: hóa đơn EVN vs đo đếm nội bộ"
+        style={{ marginBottom: 16 }}
+      >
         <Table
           rowKey={(record) => record.factoryId || record.factoryCode}
           loading={loading}
           dataSource={report?.byFactory || []}
           pagination={false}
+          scroll={{ x: true }}
           columns={[
             { title: "Nhà máy", dataIndex: "factoryName" },
             {
-              title: "Tiêu thụ",
+              title: "Sản lượng EVN",
+              dataIndex: "billedCons",
+              align: "right",
+              render: (value: number) => fmtNumber.format(value) + " kWh",
+            },
+            {
+              title: "Chi phí EVN",
+              dataIndex: "billedCost",
+              align: "right",
+              render: (value: number) => fmtMoney.format(value) + " VNĐ",
+            },
+            {
+              title: "Hạ thế đo được",
+              dataIndex: "internalCons",
+              align: "right",
+              render: (value: number) => fmtNumber.format(value) + " kWh",
+            },
+            {
+              title: "Tổn thất",
+              dataIndex: "lossCons",
+              align: "right",
+              render: (
+                value: number,
+                record: NonNullable<ReportData["byFactory"]>[number],
+              ) => (
+                <Text type={value < 0 ? "danger" : undefined}>
+                  {fmtNumber.format(value)} kWh ({record.lossPercent.toFixed(1)}
+                  %)
+                </Text>
+              ),
+            },
+            {
+              title: "Đơn giá BQ",
+              dataIndex: "avgUnitPrice",
+              align: "right",
+              render: (value: number) =>
+                fmtMoney.format(Math.round(value)) + " đ/kWh",
+            },
+          ]}
+        />
+      </Card>
+
+      <Card
+        title="Công tơ trung thế (hóa đơn EVN — 3 khung giá)"
+        style={{ marginBottom: 16 }}
+      >
+        <Table
+          rowKey="meterId"
+          loading={loading}
+          dataSource={report?.byMvMeter || []}
+          pagination={false}
+          scroll={{ x: true }}
+          columns={[
+            {
+              title: "Mã ĐH",
+              dataIndex: "meterCode",
+              render: (value: string) => <Tag color="volcano">{value}</Tag>,
+            },
+            { title: "Tên công tơ", dataIndex: "meterName" },
+            { title: "Nhà máy", dataIndex: "factoryName" },
+            {
+              title: "Bình thường",
+              dataIndex: "consNormal",
+              align: "right",
+              render: (value: number) => fmtNumber.format(value) + " kWh",
+            },
+            {
+              title: "Cao điểm",
+              dataIndex: "consPeak",
+              align: "right",
+              render: (value: number) => fmtNumber.format(value) + " kWh",
+            },
+            {
+              title: "Thấp điểm",
+              dataIndex: "consOffPeak",
+              align: "right",
+              render: (value: number) => fmtNumber.format(value) + " kWh",
+            },
+            {
+              title: "Tổng",
               dataIndex: "consTotal",
               align: "right",
               render: (value: number) => fmtNumber.format(value) + " kWh",
             },
             {
-              title: "Chi phí",
+              title: "Thành tiền",
               dataIndex: "costTotal",
               align: "right",
-              render: (value: number) => fmtMoney.format(value) + " VNĐ",
+              render: (value: number) => (
+                <Text strong>{fmtMoney.format(value)} VNĐ</Text>
+              ),
             },
           ]}
         />
       </Card>
-      <Card title="Chi tiết theo đồng hồ">
+
+      <Card title="Phân bổ nội bộ theo đồng hồ hạ thế">
+        <Alert
+          type="info"
+          showIcon
+          icon={<InfoCircleOutlined />}
+          style={{ marginBottom: 12 }}
+          message="Chi phí dưới đây được PHÂN BỔ từ hóa đơn EVN theo tỷ trọng kWh của từng đồng hồ, nên tổng lại luôn khớp hóa đơn. Cột “Tự tính” là số do chính đồng hồ tính ra — chỉ để đối chiếu, KHÔNG dùng để cộng tổng."
+        />
         <Table
           rowKey="meterId"
           loading={loading}
           dataSource={report?.byMeter || []}
+          scroll={{ x: true }}
           columns={[
             {
               title: "Mã ĐH",
               dataIndex: "meterCode",
-              render: (value: string) => <Tag color="blue">{value}</Tag>,
+              render: (
+                value: string,
+                record: ReportData["byMeter"][number],
+              ) => (
+                <Space size={4}>
+                  <Tag color="blue">{value}</Tag>
+                  {record.isAuto ? <Tag color="green">AUTO</Tag> : null}
+                </Space>
+              ),
             },
             { title: "Tên đồng hồ", dataIndex: "meterName" },
             { title: "Nhà máy", dataIndex: "factoryName" },
@@ -4078,10 +4267,20 @@ export function ElectricReportsClient() {
               render: (value: number) => fmtNumber.format(value) + " kWh",
             },
             {
-              title: "Chi phí",
+              title: "Chi phí phân bổ",
               dataIndex: "costTotal",
               align: "right",
-              render: (value: number) => fmtMoney.format(value) + " VNĐ",
+              render: (value: number) => (
+                <Text strong>{fmtMoney.format(value)} VNĐ</Text>
+              ),
+            },
+            {
+              title: "Tự tính (đối chiếu)",
+              dataIndex: "costRaw",
+              align: "right",
+              render: (value: number) => (
+                <Text type="secondary">{fmtMoney.format(value)} VNĐ</Text>
+              ),
             },
           ]}
         />
