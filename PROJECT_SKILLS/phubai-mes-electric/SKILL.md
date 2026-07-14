@@ -26,7 +26,7 @@ Read these before editing electric code:
 - Selec EM368 Active Energy is read from register 0x00 and parsed by CDAB -> ABCD byte order.
 - `PowerTelemetry` stores raw AUTO/realtime readings.
 - `PowerRecord` stores daily closed readings.
-- Cron closes AUTO records at 08:00 Vietnam time.
+- AUTO records use the 06:00 Vietnam-time business cutoff; the cron executes at 06:15 so hourly telemetry has time to arrive.
 - MANUAL records come from user input.
 - Consumption formula:
   - normal: `(currTotal - prevTotal) * tu * ti`

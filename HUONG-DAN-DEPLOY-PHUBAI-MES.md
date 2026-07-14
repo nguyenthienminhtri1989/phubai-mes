@@ -15,7 +15,7 @@ Người dùng -> phubaimes.site -> Cloudflare (SSL Full Strict) -> Nginx -> loc
 - PostgreSQL 17: DB `phubai_mes_db`, user riêng `phubai_mes_user`. Web app kết nối `localhost:5432`.
 - Hai process PM2 trên VPS (xem `ecosystem.config.cjs`):
   - `phubai-mes`: web Next.js production, port `3002`.
-  - `phubai-mes-energy-cron`: chốt số điện hằng ngày 06:00 giờ VN + dọn telemetry cũ > 6 tháng.
+  - `phubai-mes-energy-cron`: chốt mốc dữ liệu 06:00, thực thi lúc 06:15 giờ VN + dọn telemetry cũ > 6 tháng.
 
 ### Thu thập điện năng theo cơ chế PUSH (từ 2026-07-08)
 
@@ -30,7 +30,7 @@ energy-push-collector.js  ── HTTPS (443, x-api-key) ─►  /api/collector/m
 gateway Modbus (Selec EM368)                          PostgreSQL: PowerLiveReading (realtime) + PowerTelemetry (theo giờ)
                                                                 │
                                                                 ▼
-                                                       phubai-mes-energy-cron (PM2): chốt số 06:00 (chỉ đọc DB local)
+                                                       phubai-mes-energy-cron (PM2): chốt mốc 06:00 lúc 06:15 (chỉ đọc DB local)
 ```
 
 - **Collector** (`scripts/energy-push-collector.js`) chạy ở **máy văn phòng / mini PC**, KHÔNG chạy trên VPS. Nó đọc Modbus rồi đẩy dữ liệu về VPS qua HTTPS, có buffer `energy-buffer.jsonl` khi mất mạng.
@@ -147,6 +147,15 @@ pm2 start scripts/energy-push-collector.js --name energy-collector
 pm2 save
 ```
 
+Collector EVN trung thế chạy one-shot theo cron, dùng cùng `API_BASE_URL` và `ENERGY_API_KEY`, thêm file `evn-accounts.json` theo mẫu `scripts/evn-accounts.example.json`. Khuyến nghị chạy nhiều nhịp sau 06:00 để chờ portal EVN cập nhật bản đọc 06:00; endpoint MES bỏ qua ngày đã có bản ghi nên chạy lại không nhân đôi:
+
+```bash
+pm2 start scripts/evn-portal-collector.js --name evn-collector --cron-restart "15,30,45 6 * * *" --no-autorestart
+pm2 save
+```
+
+Lưu ý: `evn-collector` phải có `--no-autorestart` vì script tự thoát sau khi chạy xong; nếu thiếu, PM2 sẽ restart liên tục và có thể dội request vào portal EVN.
+
 Sau này chuyển sang mini PC tại nhà máy 3: copy `energy-push-collector.js` + `.env` (giữ nguyên `API_BASE_URL`, `ENERGY_API_KEY`), chạy PM2 như trên, rồi đóng hẳn port 502 trên router.
 
 ## 6. Kiểm tra sau deploy
@@ -180,6 +189,6 @@ Trên trình duyệt: mở `https://phubaimes.site/electric/catalog`, `/electric
 
 - Từ cơ chế PUSH: **collector** (máy nhà máy) lo phần đọc Modbus + telemetry theo giờ; **cron VPS** chỉ còn chốt số + dọn telemetry. Không cần Gateway kết nối được từ VPS.
 - Trang realtime `/electric/live` đọc `PowerLiveReading` (bản đọc mới nhất do collector đẩy lên), độ trễ tối đa bằng `READ_INTERVAL_SECONDS`.
-- Cron chốt số lúc 06:00 giờ Việt Nam (`CLOSING_HOUR` trong `scripts/energy-cron.js`).
+- Mốc chốt nghiệp vụ vẫn là 06:00 giờ Việt Nam (`CLOSING_HOUR`), nhưng cron thực thi lúc 06:15 (`CLOSING_RUN_MINUTE`) để collector ghi đủ telemetry 06:00 của mọi đồng hồ.
 - `ENERGY_API_KEY` phải giống nhau ở VPS và máy chạy collector, nếu lệch collector sẽ nhận 401.
 - Nếu đổi port `3002`: sửa `ecosystem.config.cjs`, Nginx và tài liệu này.

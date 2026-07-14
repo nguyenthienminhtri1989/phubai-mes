@@ -64,7 +64,7 @@ Không để logic quan trọng chỉ nằm trong chat. Nếu một AI mới ch�
 - Deploy THỦ CÔNG qua Git: sửa code ở local → commit → push lên `main` → trên VPS `git pull` → `npm ci` (khi có thay đổi dependency) → `npx prisma migrate deploy` → `npx prisma generate` → `npm run build` → `pm2 reload ecosystem.config.cjs --only phubai-mes --update-env`.
 - PM2 web app phải start/reload qua `ecosystem.config.cjs`; không dùng `pm2 start npm --name phubai-mes -- start -p 3002` vì `package.json` đã có `next start -p 3002`, truyền thêm `-p 3002` làm Next nhận dư tham số `3002` và hiểu nhầm đó là thư mục project.
 - Trên server production chỉ dùng `npx prisma migrate deploy`, KHÔNG dùng `prisma migrate dev`.
-- PM2 ecosystem (`ecosystem.config.cjs`) khai báo 2 process trên VPS: `phubai-mes` (web Next.js port 3002) và `phubai-mes-energy-cron` (chốt số 06:00 giờ VN + dọn telemetry cũ; chế độ PUSH nên không còn thu Modbus theo giờ).
+- PM2 ecosystem (`ecosystem.config.cjs`) khai báo 2 process trên VPS: `phubai-mes` (web Next.js port 3002) và `phubai-mes-energy-cron` (chốt mốc dữ liệu 06:00 nhưng thực thi lúc 06:15 giờ VN + dọn telemetry cũ; chế độ PUSH nên không còn thu Modbus theo giờ).
 - Collector PUSH (`scripts/energy-push-collector.js`) KHÔNG chạy trên VPS và KHÔNG nằm trong ecosystem; nó chạy ở máy văn phòng / mini PC tại nhà máy và đẩy dữ liệu về VPS qua HTTPS `/api/collector/*`.
 - `.env` production đặt tại `/home/deploy/apps/phubai-mes/.env`, bắt buộc có `ENERGY_API_KEY` (khớp với máy chạy collector) và `DATABASE_URL` trỏ `phubai_mes_user@localhost:5432/phubai_mes_db`.
 - (2026-07-08) Đã dọn tàn dư kiến trúc Windows: XÓA `.github/workflows/deploy.yml` (deploy thủ công, không còn GitHub Actions), viết lại `ecosystem.config.cjs` cho VPS Linux (bỏ `windowsHide`, đường dẫn `D:\apps`), và cập nhật `HUONG-DAN-DEPLOY-PHUBAI-MES.md` theo quy trình VPS + kiến trúc PUSH.
@@ -195,7 +195,7 @@ Migrations chính:
 - `PowerRecord` là dữ liệu chốt ngày.
 - `dataSource = AUTO` do cron ghi.
 - `dataSource = MANUAL` do người dùng nhập/chốt trên UI.
-- Cron chốt số lúc 06:00 sáng giờ Việt Nam (`Asia/Ho_Chi_Minh`); giờ chốt gom trong hằng số `CLOSING_HOUR` tại `scripts/energy-cron.js`, đồng bộ cho cả lịch cron và cửa sổ tách khung giá 24h.
+- Mốc chốt nghiệp vụ là 06:00 sáng giờ Việt Nam (`Asia/Ho_Chi_Minh`) và vẫn dùng `CLOSING_HOUR` cho cửa sổ tách khung giá 24h. Cron thực thi lúc 06:15 qua `CLOSING_RUN_MINUTE` để chờ collector ghi đủ telemetry 06:00 của mọi đồng hồ; việc lùi giờ chạy không đổi `recordDate` hay cửa sổ tính điện.
 - Ngày chốt phải xử lý cẩn thận timezone Việt Nam để không lệch ngày.
 - Unique theo `(recordDate, meterId)`.
 
@@ -400,7 +400,7 @@ Migrations chính:
 - Helper xac thuc collector: `src/lib/collector-auth.ts` (`requireCollectorKey`), tach rieng khoi `@/lib/permissions` (session NextAuth).
 - `src/middleware.ts` loai tru `api/collector` khoi auth NextAuth (route tu bao ve bang api-key), giong `api/auth`.
 - `GET /api/electric/live` viet lai: doc `PowerLiveReading` thay vi goi agent/Modbus. Bo phu thuoc `AGENT_URL`/`AGENT_TOKEN`. Giu dung shape `LiveData` (timestamp, totalEnergy, voltage/current/power/pf null, meter). Tra 404 khi chua co ban doc realtime.
-- `scripts/energy-cron.js`: BO lich collect telemetry theo gio khoi cron server (telemetry gio do collector day len). Chi con lich chot so `CLOSING_HOUR` (06:00 VN) + don telemetry cu > 6 thang. Van giu ham `collectTelemetry` + `--collect-once` de test tay.
+- `scripts/energy-cron.js`: BO lich collect telemetry theo gio khoi cron server (telemetry gio do collector day len). Chi con lich chot moc du lieu `CLOSING_HOUR` (06:00 VN), thuc thi tre tai `CLOSING_RUN_MINUTE` (06:15) + don telemetry cu > 6 thang. Van giu ham `collectTelemetry` + `--collect-once` de test tay.
 - Them `scripts/energy-push-collector.js` (collector PUSH: doc Modbus theo gateway, push HTTPS, buffer `energy-buffer.jsonl` khi mat mang). Chay o may van phong / mini PC, KHONG chay tren web server. `energy-buffer.jsonl` da them vao `.gitignore`.
 - `.env` local da them `ENERGY_API_KEY`. VPS va may chay collector phai dung CUNG mot key.
 
@@ -459,3 +459,100 @@ Migrations chính:
 | 2026-07-08 | Xu ly reset/thay dong ho: khi chi so moi < ky truoc thi khong tu tinh tieu thu (cons=0, isReset=true, note canh bao) o ca AUTO (cron) va MANUAL (helper type=1/type=2), thay cho hanh vi cu cons=curr de tranh du lieu sai. | `scripts/energy-cron.js`, `src/lib/energy-record.ts`, `BUSINESS_LOGIC_CONTEXT.md` | `node --check scripts/energy-cron.js`, `npx eslint src/lib/energy-record.ts`, `npm run build`, smoke: chot/nhap voi chi so tut -> record cons=0 + isReset + note canh bao |
 | 2026-07-08 | Telemetry lay theo moc gio tron (ban doc dau moi gio thay vi nguong 59 phut) va sua bug Prisma ghi Timestamptz lech -7h bang cach ep session timezone=UTC. | `src/app/api/collector/ingest/route.ts`, `src/lib/prisma.ts`, `BUSINESS_LOGIC_CONTEXT.md` | `npx eslint`, `npm run build`, smoke ingest: 5 reading/3 gio => telemetryInserted=3 (dau moi gio); SQL kiem tra timestamp luu dung UTC khong lech |
 | 2026-07-08 | Dong bo quy trinh PM2 VPS sau loi command cu `npm start -p 3002` lam Next nhan thanh `next start -p 3002 3002`; deploy/reload web phai di qua `ecosystem.config.cjs --only phubai-mes --update-env`, khong start bang `pm2 start npm`. | `ecosystem.config.cjs`, `HUONG-DAN-DEPLOY-PHUBAI-MES.md`, `BUSINESS_LOGIC_CONTEXT.md` | `node -e "require('./ecosystem.config.cjs')"`, doc review |
+
+## 2026-07-14 - Hoa don EVN la nguon tien duy nhat + tu dong lay chi so trung the tu portal CSKH
+
+### Current State Update
+
+**1. Bao cao dien nang (`/electric/reports`) viet lai theo mo hinh 2 LOP:**
+
+- `src/app/api/electric/reports/route.ts` viet lai hoan toan. Truoc day route SUM het `costTotal` cua MOI `PowerRecord` (ca trung the lan ha the) vao mot con so -> DEM TRUNG gan gap doi, vi cong to trung the la cong to tong dau nguon do TRUM len toan bo dong ho ha the cung nha may.
+- Nay tach 2 lop khong bao gio cong vao nhau:
+  - `billed*` = so lieu cong to Trung the (type=2, cong to EVN) -> TIEN THAT phai tra.
+  - `internal*` = tong dong ho Ha the (type=1) -> dien di dau trong nha may.
+- Chi phi tung dong ho ha the duoc PHAN BO NGUOC tu hoa don EVN theo ty trong kWh (xem Business Rules).
+- Them cac field moi trong response: `billedConsumption`, `billedCost`, `internalConsumption`, `lossConsumption`, `lossPercent`, `hasNegativeLoss`, `avgUnitPrice`, `mvMeterCount`, `lvMeterCount`, `warnings[]`; them mang `byMvMeter` (danh sach cong to EVN + 3 khung + thanh tien). `byMeter` nay CHI con dong ho ha the, co them `costRaw` (so cu do dong ho tu tinh, chi de doi chieu).
+- Giu alias `totalConsumption`/`totalCost` = so lieu EVN de `ElectricOverviewClient` khong vo.
+- FIX BUG LOC NHA MAY: bo loc cu `meter: { transformer: { factoryId } }` loai sach cong to trung the (vi trung the co `transformerId = null`, gan thang `factoryId` tren `PowerMeter`). Nay dung `OR` do ca 3 duong: `factoryId` truc tiep / qua `transformer` / qua `transformerUnit.transformer`.
+- Bo fallback `consNormal ?? consTotal` khi tinh ty trong khung gio (fallback cu don het san luong chua tach khung vao Binh thuong, thoi phong ty trong). Nay 3 khung lay TRUC TIEP tu cong to EVN.
+- `src/components/electric/ElectricClients.tsx`: cap nhat type `ReportData`; doi 4 the KPI (San luong EVN / Chi phi EVN + don gia binh quan / Ton that & chua do duoc / Nhanh ha the ton dien nhat); them banner canh bao `warnings`; them bang doi chieu theo nha may; them bang cong to trung the rieng; bang ha the them cot "Chi phi phan bo" + "Tu tinh (doi chieu)".
+
+**2. FIX: cong to trung the khong nhap duoc he so TU/TI:**
+
+- Form quan ly dong ho (`ElectricClients.tsx`) truoc day AN khoi TU/TI khi `type === 2` (`getFieldValue("type") === 2 ? null : ...`). Hau qua: cong to trung the KHONG CO DUONG NAO nhap he so, luon giu mac dinh `tu = ti = 1` -> san luong chi bang hieu so tho, THIEU he so nhan.
+- Cong thuc trong `src/lib/energy-record.ts` KHONG sai (da nhan `deltaNormal * meter.tu * meter.ti` cho ca 3 khung tu dau), schema cung da co san `tu`/`ti`. Loi CHI o form.
+- Nay: bo dieu kien an, TU/TI hien voi moi loai dong ho; them o "He so nhan (TU x TI)" tu tinh; them cot "He so nhan" vao bang danh muc DH Trung the, dong ho chua dat hien tag DO "Chua dat (x1)".
+- KHONG them truong moi vao schema (tranh 2 nguon su that song song voi `tu`/`ti`).
+
+**3. Tu dong lay chi so trung the hang ngay tu portal CSKH cua EVNCPC:**
+
+- Them `POST /api/collector/mv-ingest` (`src/app/api/collector/mv-ingest/route.ts`): kenh may-toi-may, xac thuc `x-api-key` qua `requireCollectorKey` (giong `/api/collector/ingest`; khong dung duoc `/api/electric/daily-input` vi route do doi session NextAuth). Nhan `{ readings: [{ meterCode, recordDate, currNormal, currPeak, currOffPeak, note? }] }`.
+- Them `scripts/evn-portal-collector.js`: chay o mini PC nha may (KHONG chay tren VPS), one-shot qua PM2 cron sau moc 06:00; khuyen nghi chay nhieu nhip 06:15/06:30/06:45 de cho portal EVN cap nhat kip. Ho tro DA TAI KHOAN (EVN cap moi cong to mot tai khoan rieng), moi tai khoan co token cache rieng.
+- Them `scripts/evn-accounts.example.json` (mau cau hinh). `.gitignore` da chan `evn-accounts.json`, `.evn-tokens/`, `evn-mv-buffer.jsonl`, `evn.log`.
+
+### Business Rules Update
+
+**Nguyen tac tien dien (QUAN TRONG NHAT):**
+
+- Cong to Trung the (type=2) = cong to EVN dau nguon, do TRUM len toan bo dong ho ha the cung nha may. TUYET DOI KHONG duoc cong tien MV + tien LV -> se dem trung gan gap doi.
+- MV la NGUON TIEN DUY NHAT. Chi MV moi co du 3 thanh ghi TOU nen `costTotal` tinh dung 3 gia = so tien that phai tra EVN.
+- Tien cua dong ho ha the KHONG dang tin:
+  - LV nhap tay (chot 1 lan/ngay luc 06:00): khong du du lieu tach khung gio -> don het vao gia Binh thuong -> SAI.
+  - LV AUTO (telemetry 1 lan/gio): tach duoc 3 khung nhung chi la NOI SUY tuyen tinh theo so phut giao voi bieu khung gio -> gan dung, van khong khop EVN.
+- KHONG the dung bieu khung gio (`TariffTimeRange`) de tach 3 gia cho dong ho nhap tay: bieu chi cho biet gio nao thuoc khung nao, KHONG cho biet dien tieu thu roi vao gio nao. Cach duy nhat la gia dinh phu tai phang 24/24 -> sai nghiem trong voi nha may chay ca, va tao ra con so trong rat chinh xac nhung thuc chat la bia.
+
+**Cong thuc phan bo nguoc (chi o TANG BAO CAO, khong doi `PowerRecord`):**
+
+```
+rate(nha may)         = SUM costTotal(MV) / SUM consTotal(LV)   [VND/kWh]
+costAllocated(record) = consTotal(record) x rate(nha may)
+```
+
+- Tong chi phi phan bo LUON khop hoa don EVN -> ke toan doi chieu duoc.
+- Khong phu thuoc viec LV da lap AUTO hay chua: LV chi dong vai tro TY TRONG. Khi LV len AUTO het, ty trong chi chinh xac hon, KHONG phai sua code.
+- `rate` tinh tu `costTotal` DA LUU CUNG cua MV nen mien nhiem voi viec EVN doi gia (bao cao thang cu khong bi tinh lai).
+- `avgUnitPrice` = don gia binh quan thuc te cua nha may, DA bao gom san anh huong cua ca 3 khung gia.
+
+**Ton that:**
+
+- `lossCons = consMV - SUM consLV` = ton that duong day/MBA + phu tai chua gan dong ho.
+- Neu AM (LV vuot MV) = du lieu bat thuong (sai TU/TI, hoac MV nhap thieu ngay). GIU NGUYEN dau am (khong kep ve 0) + canh bao DO, de lo ngay loi thay vi giau di.
+
+**Cong thuc san luong trung the:**
+
+- `cons = (chi so sau - chi so truoc) x TU x TI`, ap cho CA 3 KHUNG (Binh thuong/Cao diem/Thap diem). He so nhan = `tu * ti`.
+- Chi so cong to (`currNormal/currPeak/currOffPeak`) luu THO (chua nhan he so); chi cac cot `cons*` moi nhan he so. Nhat quan giua nhap tay va AUTO.
+
+**EVN portal collector:**
+
+- Portal: `https://cskh.cpc.vn`, API: `https://cskh-api.cpc.vn`.
+- Login: `POST /api/cskh/user/login`, body `{ username, password, grant_type: "password", scope: "CSKH", ThongTinCaptcha: { captcha: "undefined", token: "undefined" } }` -> tra `access_token` (JWT, `expires_in = 31536000` = ~1 NAM). Khong co captcha.
+- Du lieu: `POST /api/remote/dspm/thongsovanhanh?customerPoint=...&customerCode=...&time=MM/DD/YYYY HH:mm`, header `Authorization: Bearer <token>`.
+  - PHAI la POST: GET tra 405 (`allow: POST`).
+  - PHAI co body (gui `"{}"` + `Content-Type: application/json`): IIS tra 411 Length Required neu body rong.
+  - `time` dung dinh dang MY (MM/DD/YYYY), khong phai DD/MM/YYYY.
+- Response: `results[0].impbt / impcd / imptd` = chi so LUY KE 3 khung Binh thuong/Cao diem/Thap diem (kiem chung: `impbt + impcd + imptd ~= importkwh`). Day dung la 3 so nguoi van hanh dang go tay -> collector chi thay ban phim, KHONG doi logic tinh toan nao.
+- Truong `chuoI_GIA` tra luon don gia 3 khung cua EVN (vd `BT: 100%*1604-SXBT-A; CD: ...; TD: ...`), duoc ghi vao `note` de doi chieu voi bang `ElectricityPrice`.
+- Quy uoc ngay: so doc luc 06:00 SANG NAY duoc ghi cho `recordDate = NGAY HOM QUA` (giong het trang nhap tay `/electric/daily-mv`, mac dinh `dayjs().subtract(1, "day")`). Collector chiu trach nhiem gui dung ngay; endpoint KHONG tu suy dien.
+- CHOT AN TOAN 1 - du lieu phai TUOI: script kiem tra `results[0].ngaygio` phai dung `hom-nay T06:00:00`. Neu cong to mat song va portal tra ban doc CU -> KHONG day, de nguoi van hanh nhap tay. Ghi nham so cu thanh so chot hom nay se sai ca san luong lan tien, va rat kho phat hien.
+- CHOT AN TOAN 2 - chong lap nham tai khoan: doi chieu `results[0].mA_DIEMDO` voi `customerPoint` trong cau hinh; lech thi dung, tranh ghi so nha may nay sang nha may khac.
+- CHOT AN TOAN 3 - khong ghi de: endpoint BO QUA neu da co `PowerRecord (recordDate, meterId)` -> tra `exists-skipped`. NHAP TAY LUON THANG, va chay lai script bao nhieu lan cung khong nhan doi du lieu.
+- Endpoint dung chung `buildPowerRecordValues` voi flow nhap tay -> baseline / phat hien reset / nhan TU x TI / tinh 3 gia deu la MOT NGUON SU THAT, khong nhan ban logic.
+- Ghi `dataSource: "AUTO"`, `createdBy: "evn-collector"`.
+- Lich chay collector EVN co the lap lai nhieu nhip trong buoi sang, vi endpoint idempotent theo `(recordDate, meterId)`. Khuyen nghi PM2 cron `15,30,45 6 * * *`: van query DU LIEU moc 06:00, chi lui thoi diem truy cap portal sang 06:15/06:30/06:45 de tranh EVN chua cap nhat kip.
+
+### Open Decisions / Luu y
+
+- `ElectricityPrice.type` dang `@unique` -> KHONG CO LICH SU GIA. `getUnitPrice()` luon `findUnique({ where: { type } })` = lay gia HIEN TAI bat ke `recordDate`. Rui ro: sau khi EVN tang gia va cap nhat bang gia, neu nhap BO SUNG/SUA mot ban ghi cua thang truoc thi no an gia MOI -> sai. Can them bang lich su gia (hoac bo `@unique`, tra gia theo `effectiveFrom <= recordDate`). CHUA LAM. (Co che phan bo nguoc MIEN NHIEM voi loi nay vi lay tu `costTotal` da luu cung cua MV.)
+- Bug nhe trong `splitTelemetryByTariff`: khoang telemetry vat qua nua dem (23:30 -> 00:30) bi gan `dayType` va khung gio theo NGAY CU (`endMinute` co the vuot 1440 nhung range chi toi 1440). HIEN CHUA GAY SAI SO vi khung 22:00-04:00 hai ben nua dem deu la Thap diem. Nhung neu sau nay MV len AUTO thi bug nay se anh huong TRUC TIEP toi hoa don -> phai sua.
+- BACKFILL DU LIEU MV CU: cac `PowerRecord` trung the tao TRUOC khi dat TU/TI da luu cung `cons*` va `costTotal` voi he so 1 -> SAI, khong tu sua. Sau khi dat TU/TI phai chay UPDATE nhan `cons*` va `costTotal` len `tu * ti`, BAT BUOC gioi han `recordDate < ngay dat he so` (neu khong, ban ghi tao SAU do von da dung se bi nhan he so LAN THU HAI), backup DB truoc, chay DUNG MOT LAN.
+- Mini PC (`/home/ubuntu/energy-collector`) nay chay HAI collector: `energy-collector` (daemon, Modbus/ha the, 60s) va `evn-collector` (one-shot, portal EVN/trung the, PM2 cron `15,30,45 6 * * *`). PM2 phai dung `--no-autorestart` cho `evn-collector` (script `process.exit()` khi xong; thieu co nay PM2 tuong crash va restart lien tuc -> doi request vao portal EVN, de bi chan IP).
+
+### Feature Ledger Update
+
+| Ngay | Thay doi | File chinh | Verify |
+| --- | --- | --- | --- |
+| 2026-07-14 | Bao cao dien viet lai theo 2 lop: chi phi CHI lay tu cong to EVN (trung the), chi phi dong ho ha the PHAN BO NGUOC theo ty trong kWh (tong luon khop hoa don); them metric ton that (`consMV - SUM consLV`) + canh bao do khi am; fix bug loc nha may lam mat sach cong to trung the (`transformer.factoryId` -> OR 3 duong); bo fallback consNormal ?? consTotal lam thoi phong ty trong khung Binh thuong. | `src/app/api/electric/reports/route.ts`, `src/components/electric/ElectricClients.tsx`, `BUSINESS_LOGIC_CONTEXT.md` | `npm run build`, smoke: `/electric/reports` tong chi phi = hoa don EVN (khong con gap doi), loc theo nha may van thay cong to trung the, bang ha the tong "Chi phi phan bo" = tong "Chi phi EVN" |
+| 2026-07-14 | FIX cong to trung the khong nhap duoc TU/TI: form an khoi TU/TI khi type=2 nen `tu=ti=1` mai mai -> san luong thieu he so nhan. Bo dieu kien an, them o "He so nhan (TU x TI)" tu tinh, them cot he so + tag do "Chua dat (x1)" vao bang danh muc DH Trung the. Cong thuc trong energy-record.ts va schema KHONG sai, khong them truong moi. | `src/components/electric/ElectricClients.tsx`, `BUSINESS_LOGIC_CONTEXT.md` | `npm run build`, smoke: sua DH trung the -> nhap duoc TU/TI, he so nhan hien dung; bang danh muc hien tag do voi DH chua dat; ban ghi moi co `cons = delta * tu * ti` |
+| 2026-07-14 | Tu dong lay chi so trung the tu portal CSKH EVNCPC: them endpoint `/api/collector/mv-ingest` (x-api-key, dung chung buildPowerRecordValues, BO QUA ngay da co ban ghi -> nhap tay luon thang) + collector `evn-portal-collector.js` (da tai khoan, token cache ~1 nam, POST + body `{}` vi GET tra 405 / body rong tra 411, kiem tra ngaygio phai dung 06:00 hom nay, doi chieu mA_DIEMDO chong lap nham tai khoan, buffer khi mat mang). Lich PM2 nen chay nhieu nhip 06:15/06:30/06:45 de doi portal EVN cap nhat ban doc 06:00; endpoint idempotent nen chay lai khong nhan doi. | `src/app/api/collector/mv-ingest/route.ts`, `scripts/evn-portal-collector.js`, `scripts/evn-accounts.example.json`, `.gitignore`, `BUSINESS_LOGIC_CONTEXT.md` | `node --check scripts/evn-portal-collector.js`, `npm run build`, smoke VPS: `curl -X POST /api/collector/mv-ingest` voi meterCode gia -> `meter-not-found` (401 neu thieu key); smoke mini PC: `node evn-portal-collector.js` -> 3 cong to tra BT/CD/TD, status `created` / `exists-skipped` / `created-baseline`; PM2: `pm2 start evn-portal-collector.js --name evn-collector --cron-restart "15,30,45 6 * * *" --no-autorestart` |
+| 2026-07-14 | Tach moc chot nghiep vu khoi thoi diem cron thuc thi: giu cua so dien ket thuc luc 06:00 (`CLOSING_HOUR`) nhung doi cron tao `PowerRecord` sang 06:15 (`CLOSING_RUN_MINUTE`) de collector co 15 phut ghi du telemetry 06:00 cua cac dong ho; khong doi cong thuc, `recordDate`, schema hay API. | `scripts/energy-cron.js`, `ecosystem.config.cjs`, `HUONG-DAN-DEPLOY-PHUBAI-MES.md`, `PROJECT_SKILLS/phubai-mes-electric/SKILL.md`, `BUSINESS_LOGIC_CONTEXT.md` | `node --check scripts/energy-cron.js`, `node -e "require('./ecosystem.config.cjs')"`, restart/reload `phubai-mes-energy-cron` tren VPS va kiem tra log hien moc 06:00 / thuc thi 06:15 |

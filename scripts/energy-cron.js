@@ -14,9 +14,10 @@ if (!connectionString) {
 const pool = new Pool({ connectionString });
 let keepProcessAlive = false;
 
-// Giờ chốt số điện năng hằng ngày (giờ Việt Nam, hệ 24h). Đổi giá trị này để thay đổi
-// thời điểm chốt số; giá trị này đồng bộ cho cả lịch cron và cửa sổ tách khung giá 24h.
+// Mốc chốt nghiệp vụ vẫn là 06:00 giờ Việt Nam, dùng để xác định cửa sổ điện 24h.
+// Cron thực thi trễ 15 phút để collector có thời gian ghi đủ telemetry 06:00 của mọi đồng hồ.
 const CLOSING_HOUR = 6;
+const CLOSING_RUN_MINUTE = 15;
 
 function newId(prefix) {
   return `${prefix}_${crypto.randomUUID()}`;
@@ -437,12 +438,12 @@ async function main() {
   // Co che PUSH: telemetry theo gio do collector (energy-push-collector.js) day len qua
   // /api/collector/ingest. Cron server KHONG con thu Modbus theo gio nua, chi con chot so
   // hang ngay + don telemetry cu. Van giu `collectTelemetry` + `--collect-once` de test tay.
-  cron.schedule(`0 ${CLOSING_HOUR} * * *`, closeDailyRecords, {
+  cron.schedule(`${CLOSING_RUN_MINUTE} ${CLOSING_HOUR} * * *`, closeDailyRecords, {
     scheduled: true,
     timezone: "Asia/Ho_Chi_Minh",
   });
 
-  console.log(`Energy cron da khoi dong (che do PUSH). Chi chot so luc ${String(CLOSING_HOUR).padStart(2, "0")}:00 gio Viet Nam; telemetry do collector day len.`);
+  console.log(`Energy cron da khoi dong (che do PUSH). Moc du lieu ${String(CLOSING_HOUR).padStart(2, "0")}:00, thuc thi chot luc ${String(CLOSING_HOUR).padStart(2, "0")}:${String(CLOSING_RUN_MINUTE).padStart(2, "0")} gio Viet Nam; telemetry do collector day len.`);
 }
 
 main()

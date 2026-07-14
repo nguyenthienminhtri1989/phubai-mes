@@ -12,7 +12,8 @@ const path = require("node:path");
 //
 // Hai process chay TREN VPS:
 //   - phubai-mes             : web app Next.js (port 3002)
-//   - phubai-mes-energy-cron : cron chot so dien hang ngay 06:00 gio VN + don telemetry cu
+//   - phubai-mes-energy-cron : cron chot moc du lieu 06:00, thuc thi luc 06:15 gio VN
+//                              + don telemetry cu
 //                              (energy-cron.js che do PUSH: KHONG con thu Modbus theo gio)
 //
 // LUU Y: energy-push-collector.js (doc Modbus + push HTTPS) chay o MAY VAN PHONG / mini PC

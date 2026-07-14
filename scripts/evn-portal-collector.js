@@ -10,12 +10,14 @@ import path from "node:path";
 // nên mỗi tài khoản có token riêng, cache riêng. Một tài khoản lỗi (sai mật khẩu,
 // portal chặn) KHÔNG làm hỏng các tài khoản còn lại.
 //
-// Chạy 1 LẦN mỗi sáng qua cron (khuyến nghị 06:30, sau mốc chốt 06:00):
-//   30 6 * * *  cd /opt/phubai-collector && /usr/bin/node evn-portal-collector.js >> evn.log 2>&1
+// Chạy mỗi sáng qua cron SAU mốc chốt 06:00. Khuyến nghị chạy nhiều nhịp
+// 06:15, 06:30, 06:45 để chờ portal EVN cập nhật kịp bản đọc 06:00.
+// Endpoint MES bỏ qua ngày đã có bản ghi nên chạy lại không nhân đôi dữ liệu:
+//   15,30,45 6 * * *  cd /opt/phubai-collector && /usr/bin/node evn-portal-collector.js >> evn.log 2>&1
 //
 // Luồng cho từng tài khoản:
 //   1. Login portal EVN (hoặc dùng token cache — token EVN sống ~1 năm)
-//   2. GET thongsovanhanh, time = HÔM NAY 06:00 (giờ VN)
+//   2. POST thongsovanhanh, time = HÔM NAY 06:00 (giờ VN)
 //   3. Kiểm tra ngaygio trả về ĐÚNG mốc 06:00 hôm nay (dữ liệu tươi)
 //   4. Gom lại, POST 1 lần lên VPS /api/collector/mv-ingest,
 //      recordDate = HÔM QUA (đúng quy ước trang nhập tay: số 06:00 sáng nay
@@ -143,7 +145,17 @@ async function fetchThongSoVanHanh(token, account, timeParam) {
     `?customerPoint=${encodeURIComponent(account.customerPoint)}` +
     `&customerCode=${encodeURIComponent(account.customerCode)}` +
     `&time=${encodeURIComponent(timeParam)}`;
-  return fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  // Portal yeu cau POST (server tra 405 khi GET, header "allow: POST").
+  // IIS con doi Content-Length > 0 (loi 411 neu body rong khong khai bao),
+  // nen gui "{}" + Content-Type application/json cho chac.
+  return fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: "{}",
+  });
 }
 
 // Đọc chỉ số 3 khung của 1 công tơ tại mốc 06:00 hôm nay. Tự re-login khi 401.
@@ -161,7 +173,7 @@ async function readAccount(account) {
     res = await fetchThongSoVanHanh(token, account, timeParam);
   }
   if (!res.ok) {
-    throw new Error(`${account.meterCode}: GET thongsovanhanh loi ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    throw new Error(`${account.meterCode}: POST thongsovanhanh loi ${res.status}: ${(await res.text()).slice(0, 200)}`);
   }
 
   const data = await res.json();
