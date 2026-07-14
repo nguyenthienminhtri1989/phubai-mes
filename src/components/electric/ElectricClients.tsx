@@ -1121,6 +1121,22 @@ export function ElectricCatalogClient() {
                       },
                       { title: "Serial", dataIndex: "meterNo" },
                       {
+                        title: "Hệ số nhân",
+                        width: 130,
+                        align: "right",
+                        render: (_: unknown, record: ElectricMeter) => {
+                          const factor =
+                            (record.tu || 1) * (record.ti || 1);
+                          return factor > 1 ? (
+                            <Tag color="gold">
+                              ×{factor} (TU {record.tu} / TI {record.ti})
+                            </Tag>
+                          ) : (
+                            <Tag color="red">Chưa đặt (×1)</Tag>
+                          );
+                        },
+                      },
+                      {
                         title: "Mô tả",
                         dataIndex: "note",
                         render: (value?: string | null) =>
@@ -1633,35 +1649,54 @@ export function ElectricCatalogClient() {
                 />
               </Form.Item>
             </Col>
-            <Form.Item
-              noStyle
-              shouldUpdate={(prev, next) => prev.type !== next.type}
-            >
-              {({ getFieldValue }) =>
-                getFieldValue("type") === 2 ? null : (
-                  <>
-                    <Col xs={24} md={8}>
-                      <Form.Item
-                        name="tu"
-                        label="TU"
-                        rules={[{ required: true }]}
-                      >
-                        <InputNumber min={1} style={{ width: "100%" }} />
-                      </Form.Item>
-                    </Col>
-                    <Col xs={24} md={8}>
-                      <Form.Item
-                        name="ti"
-                        label="TI"
-                        rules={[{ required: true }]}
-                      >
-                        <InputNumber min={1} style={{ width: "100%" }} />
-                      </Form.Item>
-                    </Col>
-                  </>
-                )
-              }
-            </Form.Item>
+            {/* Hệ số nhân (TU × TI) ÁP DỤNG CHO MỌI LOẠI ĐỒNG HỒ.
+                Trước đây khối này bị ẩn khi type === 2 (trung thế), khiến công tơ EVN
+                luôn giữ tu = ti = 1 -> sản lượng chỉ bằng hiệu số thô, THIẾU hệ số nhân.
+                Công thức đúng: (chỉ số sau − chỉ số trước) × TU × TI, áp cho cả 3 khung giờ. */}
+            <Col xs={24} md={8}>
+              <Form.Item
+                name="tu"
+                label="TU (hệ số biến áp đo lường)"
+                rules={[{ required: true }]}
+              >
+                <InputNumber min={1} style={{ width: "100%" }} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={8}>
+              <Form.Item
+                name="ti"
+                label="TI (hệ số biến dòng đo lường)"
+                rules={[{ required: true }]}
+              >
+                <InputNumber min={1} style={{ width: "100%" }} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={8}>
+              <Form.Item
+                noStyle
+                shouldUpdate={(prev, next) =>
+                  prev.tu !== next.tu || prev.ti !== next.ti
+                }
+              >
+                {({ getFieldValue }) => {
+                  const factor =
+                    (Number(getFieldValue("tu")) || 1) *
+                    (Number(getFieldValue("ti")) || 1);
+                  return (
+                    <Form.Item label="Hệ số nhân (TU × TI)">
+                      <Input
+                        readOnly
+                        value={String(factor)}
+                        style={{ fontWeight: 600 }}
+                      />
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        Sản lượng = (chỉ số sau − chỉ số trước) × {factor}
+                      </Text>
+                    </Form.Item>
+                  );
+                }}
+              </Form.Item>
+            </Col>
             <Col xs={24} md={8}>
               <Form.Item name="meterNo" label="Số serial">
                 <Input />
