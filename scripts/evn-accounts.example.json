@@ -1,0 +1,26 @@
+[
+  {
+    "_ghiChu": "NHA MAY 1 — dien password va meterCode roi doi ten file thanh evn-accounts.json",
+    "username": "soiphubai01",
+    "password": "<DIEN MAT KHAU>",
+    "customerCode": "PC03PP0202258",
+    "customerPoint": "PC03PP0202258001",
+    "meterCode": "<MA DONG HO TRUNG THE TRONG MES>"
+  },
+  {
+    "_ghiChu": "NHA MAY 2",
+    "username": "<USERNAME EVN NHA MAY 2>",
+    "password": "<DIEN MAT KHAU>",
+    "customerCode": "PC03PP0202257",
+    "customerPoint": "PC03PP0202257001",
+    "meterCode": "<MA DONG HO TRUNG THE TRONG MES>"
+  },
+  {
+    "_ghiChu": "NHA MAY 3",
+    "username": "<USERNAME EVN NHA MAY 3>",
+    "password": "<DIEN MAT KHAU>",
+    "customerCode": "PC03PP0240108",
+    "customerPoint": "PC03PP0240108001",
+    "meterCode": "<MA DONG HO TRUNG THE TRONG MES>"
+  }
+]

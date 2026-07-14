@@ -44,3 +44,9 @@ next-env.d.ts
 
 # energy push collector buffer (khi mat mang, luu tam readings)
 energy-buffer.jsonl
+
+# EVN portal collector — CHUA MAT KHAU TAI KHOAN EVN, TUYET DOI KHONG COMMIT
+evn-accounts.json
+.evn-tokens/
+evn-mv-buffer.jsonl
+evn.log
