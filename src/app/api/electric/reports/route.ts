@@ -191,6 +191,7 @@ export async function GET(request: NextRequest) {
       meterName: string;
       meterType: number;
       isAuto: boolean;
+      isNonProduction: boolean;
       factoryId: string | null;
       factoryName: string;
       groupName: string;
@@ -224,6 +225,7 @@ export async function GET(request: NextRequest) {
         meterName: row.meter.name,
         meterType: row.meter.type,
         isAuto: row.meter.isAuto,
+        isNonProduction: row.meter.isNonProduction,
         factoryId: factory?.id || null,
         factoryName: factory?.name || "Chưa gắn nhà máy",
         groupName: row.meter.group?.name || "Chưa phân nhóm",
@@ -343,6 +345,26 @@ export async function GET(request: NextRequest) {
   const billedCost = mvRows.reduce((sum, row) => sum + row.costTotal, 0);
   const internalConsumption = lvRows.reduce((sum, row) => sum + row.consTotal, 0);
 
+  // Tach chi phi phan bo thanh 2 nhom: San xuat vs Ngoai san xuat (van phong, bom chua chay...).
+  // LUU Y QUAN TRONG: viec tach nay CHI de gom nhom hien thi. Ca 2 nhom VAN nam trong mau so
+  // rate (allocatedCost tinh tren TOAN BO lvRows), vi dien cua ho thuc su nam trong cong to EVN
+  // cua nha may. Neu loai nhom ngoai SX khoi mau so, don gia rate se bi thoi phong va cac dong ho
+  // san xuat se ganh oan phan tien cua van phong/chua chay. Tong 2 nhom LUON = hoa don EVN.
+  let productionCost = 0;
+  let productionCons = 0;
+  let nonProductionCost = 0;
+  let nonProductionCons = 0;
+  for (const row of lvRows) {
+    const cost = allocatedCost(row);
+    if (row.meter.isNonProduction) {
+      nonProductionCost += cost;
+      nonProductionCons += row.consTotal;
+    } else {
+      productionCost += cost;
+      productionCons += row.consTotal;
+    }
+  }
+
   // 3 khung giờ lấy TRỰC TIẾP từ công tơ EVN — không còn fallback `consNormal ?? consTotal`
   // (fallback cũ dồn hết sản lượng chưa tách khung vào Bình thường, thổi phồng tỷ trọng).
   const totalNormal = mvRows.reduce((sum, row) => sum + (row.consNormal ?? 0), 0);
@@ -395,6 +417,11 @@ export async function GET(request: NextRequest) {
       totalOffPeak,
       // --- Nội bộ & tổn thất ---
       internalConsumption,
+      // Chi phi phan bo tach 2 nhom (tong 2 nhom = tong chi phi phan bo, va ~ billedCost):
+      productionCost,
+      productionCons,
+      nonProductionCost,
+      nonProductionCons,
       lossConsumption,
       lossPercent,
       hasNegativeLoss: lossConsumption < 0,

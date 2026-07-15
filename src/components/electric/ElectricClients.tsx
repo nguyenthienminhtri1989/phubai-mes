@@ -158,6 +158,7 @@ type ElectricMeter = {
   registerAddr: number;
   tu: number;
   ti: number;
+  isNonProduction?: boolean;
   note?: string | null;
   factory?: Factory | null;
   group?: MeterGroup | null;
@@ -266,6 +267,10 @@ type ReportData = {
     totalPeak: number;
     totalOffPeak: number;
     internalConsumption: number;
+    productionCost: number;
+    productionCons: number;
+    nonProductionCost: number;
+    nonProductionCons: number;
     lossConsumption: number;
     lossPercent: number;
     hasNegativeLoss: boolean;
@@ -290,6 +295,7 @@ type ReportData = {
     meterName: string;
     meterType: number;
     isAuto: boolean;
+    isNonProduction?: boolean;
     factoryName?: string;
     groupName: string;
     substationName: string;
@@ -1772,6 +1778,26 @@ export function ElectricCatalogClient() {
                     }
                   </Form.Item>
                 </Card>
+              )
+            }
+          </Form.Item>
+          <Form.Item
+            noStyle
+            shouldUpdate={(prev, next) => prev.type !== next.type}
+          >
+            {({ getFieldValue }) =>
+              getFieldValue("type") === 2 ? null : (
+                <Form.Item
+                  name="isNonProduction"
+                  label="Ngoài sản xuất"
+                  valuePropName="checked"
+                  tooltip="Đồng hồ phục vụ văn phòng, bơm chữa cháy... Vẫn tính trong hóa đơn EVN của nhà máy nhưng được tách riêng khi báo cáo chi phí."
+                >
+                  <Switch
+                    checkedChildren="Ngoài SX"
+                    unCheckedChildren="Sản xuất"
+                  />
+                </Form.Item>
               )
             }
           </Form.Item>
@@ -4263,6 +4289,41 @@ export function ElectricReportsClient() {
         />
       </Card>
 
+      {summary && (summary.nonProductionCost > 0 || summary.nonProductionCons > 0) ? (
+        <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+          <Col xs={24} md={12}>
+            <Card>
+              <Statistic
+                title="Chi phí sản xuất (đã phân bổ)"
+                value={summary.productionCost}
+                precision={0}
+                suffix="VNĐ"
+                prefix={<ThunderboltOutlined />}
+              />
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {fmtNumber.format(summary.productionCons)} kWh
+              </Text>
+            </Card>
+          </Col>
+          <Col xs={24} md={12}>
+            <Card>
+              <Statistic
+                title="Chi phí ngoài sản xuất (văn phòng, chữa cháy...)"
+                value={summary.nonProductionCost}
+                precision={0}
+                suffix="VNĐ"
+                prefix={<ApiOutlined style={{ color: "#fa8c16" }} />}
+                valueStyle={{ color: "#fa8c16" }}
+              />
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {fmtNumber.format(summary.nonProductionCons)} kWh — vẫn nằm trong
+                hóa đơn EVN, chỉ tách để hạch toán riêng
+              </Text>
+            </Card>
+          </Col>
+        </Row>
+      ) : null}
+
       <Card title="Phân bổ nội bộ theo đồng hồ hạ thế">
         <Alert
           type="info"
@@ -4287,6 +4348,9 @@ export function ElectricReportsClient() {
                 <Space size={4}>
                   <Tag color="blue">{value}</Tag>
                   {record.isAuto ? <Tag color="green">AUTO</Tag> : null}
+                  {record.isNonProduction ? (
+                    <Tag color="orange">Ngoài SX</Tag>
+                  ) : null}
                 </Space>
               ),
             },

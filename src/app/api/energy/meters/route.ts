@@ -57,6 +57,9 @@ async function meterData(body: Record<string, unknown>) {
     registerAddr: Number(body.registerAddr || 0),
     tu: Number(body.tu || 1),
     ti: Number(body.ti || 1),
+    // Chi dong ho Ha the (type=1) moi co khai niem San xuat/Ngoai san xuat.
+    // Trung the (type=2) la cong to tong nen luon false.
+    isNonProduction: meterType === 2 ? false : body.isNonProduction === true,
     note: toNullableString(body.note),
   };
 }
