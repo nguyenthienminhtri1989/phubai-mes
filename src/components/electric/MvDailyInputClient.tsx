@@ -208,6 +208,8 @@ function MvMeterCard({ meter, date, canEdit, saving, onSave }: {
   saving: boolean;
   onSave: (values: { currNormal: number; currPeak: number; currOffPeak: number; note?: string }) => void;
 }) {
+  // editing khoi tao theo trang thai ban dau; se dong bo lai qua useEffect ben duoi
+  // moi khi todayRecord thay doi (vd doi ngay loc, hoac sau khi chot xong load lai).
   const [editing, setEditing] = useState(!meter.todayRecord);
   const [form] = Form.useForm();
 
@@ -218,6 +220,12 @@ function MvMeterCard({ meter, date, canEdit, saving, onSave }: {
   const prevPeak = last?.currPeak ?? 0;
   const prevOffPeak = last?.currOffPeak ?? 0;
 
+  // Dong bo ca GIA TRI form lan CHE DO hien thi (editing) theo du lieu moi tai ve.
+  // BUG cu: useState(!todayRecord) chi chay lan mount dau; khi doi ngay/load lai,
+  // React tai su dung cung instance (key=meter.id khong doi) nen editing bi ket,
+  // lam 3 nha may hien 3 kieu va tu doi trang thai sau vai giay.
+  // Dua editing vao dependency array la SAI (se ghi de thao tac bam Sua/Huy cua user),
+  // nen chi dong bo theo `today` — moc du lieu server, khong theo tuong tac cuc bo.
   useEffect(() => {
     if (today) {
       form.setFieldsValue({
@@ -226,10 +234,13 @@ function MvMeterCard({ meter, date, canEdit, saving, onSave }: {
         currOffPeak: today.currOffPeak,
         note: today.note,
       });
+      setEditing(false); // co ban ghi -> hien dang "da chot"
     } else {
       form.resetFields();
+      setEditing(true); // chua co ban ghi -> hien form nhap
     }
-  }, [today, form]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [today]);
 
   const handleFinish = (values: { currNormal: number; currPeak: number; currOffPeak: number; note?: string }) => {
     onSave(values);
