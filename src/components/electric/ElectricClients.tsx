@@ -2891,7 +2891,6 @@ export function ElectricDailyInputClient() {
                 record.previousConsTotal === null
                   ? null
                   : Number(record.previousConsTotal);
-              const current = getCurrentConsumption(record, drafts[record.id]);
               return (
                 <Space direction="vertical" size={4}>
                   <Text strong style={{ fontSize: 15 }}>
@@ -2904,7 +2903,6 @@ export function ElectricDailyInputClient() {
                         )
                       : "Chưa có"}
                   </Text>
-                  <ConsumptionTrend current={current} previous={previous} />
                 </Space>
               );
             },
@@ -2913,15 +2911,22 @@ export function ElectricDailyInputClient() {
             title: "Số chữ điện (kWh)",
             width: 200,
             render: (_: unknown, record: ElectricMeter) => {
+              const previous =
+                record.previousConsTotal === undefined ||
+                record.previousConsTotal === null
+                  ? null
+                  : Number(record.previousConsTotal);
+              const current = getCurrentConsumption(record, drafts[record.id]);
               if (record.todayRecord) {
                 return (
-                  <Space direction="vertical" size={0}>
+                  <Space direction="vertical" size={4}>
                     <Text strong style={{ fontSize: 15, color: "#389e0d" }}>
                       {fmtInput.format(Number(record.todayRecord.consTotal))}
                     </Text>
                     <Text type="secondary" style={{ fontSize: 12 }}>
                       Đã tính
                     </Text>
+                    <ConsumptionTrend current={current} previous={previous} />
                   </Space>
                 );
               }
@@ -2929,9 +2934,12 @@ export function ElectricDailyInputClient() {
                 return <Text type="secondary">---</Text>;
               }
               return (
-                <DraftStatusChip
-                  evaluation={evaluateDraft(record, drafts[record.id])}
-                />
+                <Space direction="vertical" size={4}>
+                  <DraftStatusChip
+                    evaluation={evaluateDraft(record, drafts[record.id])}
+                  />
+                  <ConsumptionTrend current={current} previous={previous} />
+                </Space>
               );
             },
           },
