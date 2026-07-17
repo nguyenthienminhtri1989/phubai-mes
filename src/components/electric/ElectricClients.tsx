@@ -4013,6 +4013,7 @@ export function ElectricReportsClient() {
     dayjs(),
   ]);
   const [groupBy, setGroupBy] = useState<"day" | "month">("day");
+  const [trendMetric, setTrendMetric] = useState<"cons" | "cost">("cons");
   const [report, setReport] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(false);
   const [factories, setFactories] = useState<Factory[]>([]);
@@ -4126,8 +4127,16 @@ export function ElectricReportsClient() {
         />
       ) : null}
 
-      <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
-        <Col xs={24} md={6}>
+      <Tabs
+        defaultActiveKey="mv"
+        items={[
+          {
+            key: "mv",
+            label: "Trung thế (hóa đơn EVN)",
+            children: (
+              <>
+                <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+        <Col xs={24} md={12}>
           <Card>
             <Statistic
               title="Sản lượng EVN (đầu nguồn)"
@@ -4151,7 +4160,7 @@ export function ElectricReportsClient() {
             )}
           </Card>
         </Col>
-        <Col xs={24} md={6}>
+        <Col xs={24} md={12}>
           <Card>
             <Statistic
               title="Chi phí điện (hóa đơn EVN)"
@@ -4166,7 +4175,142 @@ export function ElectricReportsClient() {
             </Text>
           </Card>
         </Col>
-        <Col xs={24} md={6}>
+                </Row>
+
+                <Card
+                  title={
+                    trendMetric === "cost"
+                      ? "Xu hướng chi phí điện"
+                      : "Xu hướng tiêu thụ điện"
+                  }
+                  style={{ marginBottom: 16 }}
+                  loading={loading}
+                  extra={
+                    <Segmented
+                      size="small"
+                      options={[
+                        { label: "kWh", value: "cons" },
+                        { label: "Chi phí", value: "cost" },
+                      ]}
+                      value={trendMetric}
+                      onChange={(value) =>
+                        setTrendMetric(value as "cons" | "cost")
+                      }
+                    />
+                  }
+                >
+                  <TrendLineChart
+                    metric={trendMetric}
+                    data={(report?.byDate || []).map((d) => ({
+                      label:
+                        groupBy === "month"
+                          ? d.date
+                          : dayjs(d.date).format("DD/MM"),
+                      consTotal: d.consTotal,
+                      costTotal: d.costTotal,
+                    }))}
+                  />
+                </Card>
+
+                <Card
+                  title="Tỷ trọng khung giờ theo công tơ EVN (Bình thường/Cao điểm/Thấp điểm)"
+                  style={{ marginBottom: 16 }}
+                  loading={loading}
+                >
+            <DonutChart
+              data={[
+                {
+                  label: "Bình thường",
+                  value: report?.summary.totalNormal || 0,
+                  color: "#1677ff",
+                },
+                {
+                  label: "Cao điểm",
+                  value: report?.summary.totalPeak || 0,
+                  color: "#f5222d",
+                },
+                {
+                  label: "Thấp điểm",
+                  value: report?.summary.totalOffPeak || 0,
+                  color: "#52c41a",
+                },
+              ]}
+            />
+                </Card>
+
+      {topFactories.length > 1 ? (
+        <Card
+          title="So sánh tiêu thụ theo nhà máy"
+          style={{ marginBottom: 16 }}
+          loading={loading}
+        >
+          <RankedBarChart data={topFactories} />
+        </Card>
+      ) : null}
+
+      <Card
+        title="Công tơ trung thế (hóa đơn EVN — 3 khung giá)"
+        style={{ marginBottom: 16 }}
+      >
+        <Table
+          rowKey="meterId"
+          loading={loading}
+          dataSource={report?.byMvMeter || []}
+          pagination={false}
+          scroll={{ x: true }}
+          columns={[
+            {
+              title: "Mã ĐH",
+              dataIndex: "meterCode",
+              render: (value: string) => <Tag color="volcano">{value}</Tag>,
+            },
+            { title: "Tên công tơ", dataIndex: "meterName" },
+            { title: "Nhà máy", dataIndex: "factoryName" },
+            {
+              title: "Bình thường",
+              dataIndex: "consNormal",
+              align: "right",
+              render: (value: number) => fmtNumber.format(value) + " kWh",
+            },
+            {
+              title: "Cao điểm",
+              dataIndex: "consPeak",
+              align: "right",
+              render: (value: number) => fmtNumber.format(value) + " kWh",
+            },
+            {
+              title: "Thấp điểm",
+              dataIndex: "consOffPeak",
+              align: "right",
+              render: (value: number) => fmtNumber.format(value) + " kWh",
+            },
+            {
+              title: "Tổng",
+              dataIndex: "consTotal",
+              align: "right",
+              render: (value: number) => fmtNumber.format(value) + " kWh",
+            },
+            {
+              title: "Thành tiền",
+              dataIndex: "costTotal",
+              align: "right",
+              render: (value: number) => (
+                <Text strong>{fmtMoney.format(value)} VNĐ</Text>
+              ),
+            },
+          ]}
+        />
+      </Card>
+              </>
+            ),
+          },
+          {
+            key: "lv",
+            label: "Hạ thế (phân bổ nội bộ)",
+            children: (
+              <>
+                <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+        <Col xs={24} md={12}>
           <Card>
             <Statistic
               title="Tổn thất & chưa đo được"
@@ -4195,7 +4339,7 @@ export function ElectricReportsClient() {
             </Text>
           </Card>
         </Col>
-        <Col xs={24} md={6}>
+        <Col xs={24} md={12}>
           <Card>
             <Statistic
               title="Nhánh hạ thế tốn điện nhất"
@@ -4213,65 +4357,7 @@ export function ElectricReportsClient() {
             </Text>
           </Card>
         </Col>
-      </Row>
-
-      <Card
-        title="Xu hướng tiêu thụ điện"
-        style={{ marginBottom: 16 }}
-        loading={loading}
-      >
-        <TrendLineChart
-          data={(report?.byDate || []).map((d) => ({
-            label: groupBy === "month" ? d.date : dayjs(d.date).format("DD/MM"),
-            consTotal: d.consTotal,
-            costTotal: d.costTotal,
-          }))}
-        />
-      </Card>
-
-      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-        <Col xs={24} lg={12}>
-          <Card title="Top nhánh hạ thế tiêu thụ nhiều nhất" loading={loading}>
-            <RankedBarChart data={topMeters} />
-          </Card>
-        </Col>
-        <Col xs={24} lg={12}>
-          <Card
-            title="Tỷ trọng khung giờ theo công tơ EVN (Bình thường/Cao điểm/Thấp điểm)"
-            loading={loading}
-          >
-            <DonutChart
-              data={[
-                {
-                  label: "Bình thường",
-                  value: report?.summary.totalNormal || 0,
-                  color: "#1677ff",
-                },
-                {
-                  label: "Cao điểm",
-                  value: report?.summary.totalPeak || 0,
-                  color: "#f5222d",
-                },
-                {
-                  label: "Thấp điểm",
-                  value: report?.summary.totalOffPeak || 0,
-                  color: "#52c41a",
-                },
-              ]}
-            />
-          </Card>
-        </Col>
-      </Row>
-
-      {topFactories.length > 1 ? (
-        <Card
-          title="So sánh tiêu thụ theo nhà máy"
-          style={{ marginBottom: 16 }}
-          loading={loading}
-        >
-          <RankedBarChart data={topFactories} />
-        </Card>
-      ) : null}
+                </Row>
 
       <Card
         title="Đối chiếu theo nhà máy: hóa đơn EVN vs đo đếm nội bộ"
@@ -4328,59 +4414,13 @@ export function ElectricReportsClient() {
         />
       </Card>
 
-      <Card
-        title="Công tơ trung thế (hóa đơn EVN — 3 khung giá)"
-        style={{ marginBottom: 16 }}
-      >
-        <Table
-          rowKey="meterId"
-          loading={loading}
-          dataSource={report?.byMvMeter || []}
-          pagination={false}
-          scroll={{ x: true }}
-          columns={[
-            {
-              title: "Mã ĐH",
-              dataIndex: "meterCode",
-              render: (value: string) => <Tag color="volcano">{value}</Tag>,
-            },
-            { title: "Tên công tơ", dataIndex: "meterName" },
-            { title: "Nhà máy", dataIndex: "factoryName" },
-            {
-              title: "Bình thường",
-              dataIndex: "consNormal",
-              align: "right",
-              render: (value: number) => fmtNumber.format(value) + " kWh",
-            },
-            {
-              title: "Cao điểm",
-              dataIndex: "consPeak",
-              align: "right",
-              render: (value: number) => fmtNumber.format(value) + " kWh",
-            },
-            {
-              title: "Thấp điểm",
-              dataIndex: "consOffPeak",
-              align: "right",
-              render: (value: number) => fmtNumber.format(value) + " kWh",
-            },
-            {
-              title: "Tổng",
-              dataIndex: "consTotal",
-              align: "right",
-              render: (value: number) => fmtNumber.format(value) + " kWh",
-            },
-            {
-              title: "Thành tiền",
-              dataIndex: "costTotal",
-              align: "right",
-              render: (value: number) => (
-                <Text strong>{fmtMoney.format(value)} VNĐ</Text>
-              ),
-            },
-          ]}
-        />
-      </Card>
+                <Card
+                  title="Top nhánh hạ thế tiêu thụ nhiều nhất"
+                  style={{ marginBottom: 16 }}
+                  loading={loading}
+                >
+                  <RankedBarChart data={topMeters} />
+                </Card>
 
       {summary && (summary.nonProductionCost > 0 || summary.nonProductionCons > 0) ? (
         <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
@@ -4477,6 +4517,11 @@ export function ElectricReportsClient() {
           ]}
         />
       </Card>
+              </>
+            ),
+          },
+        ]}
+      />
     </>
   );
 }

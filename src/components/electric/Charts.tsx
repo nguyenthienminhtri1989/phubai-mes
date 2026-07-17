@@ -11,25 +11,44 @@ function NoData({ text = "Chưa có dữ liệu" }: { text?: string }) {
 export function TrendLineChart({
   data,
   height = 240,
+  metric = "cons",
 }: {
   data: { label: string; consTotal: number; costTotal: number }[];
   height?: number;
+  metric?: "cons" | "cost";
 }) {
   if (data.length < 2) return <NoData text="Cần ít nhất 2 ngày có dữ liệu để vẽ xu hướng" />;
 
+  const isCost = metric === "cost";
+  const baseColor = isCost ? "#1677ff" : "#faad14";
+  // Chấm tô theo hướng so với ngày liền trước: đỏ = tăng, xanh = giảm (giống EVN nhìn hóa đơn).
+  const UP = "#f5222d";
+  const DOWN = "#52c41a";
+
+  const valueOf = (d: { consTotal: number; costTotal: number }) =>
+    isCost ? d.costTotal : d.consTotal;
+  const fmtValue = (v: number) =>
+    isCost
+      ? v.toLocaleString("vi-VN", { maximumFractionDigits: 0 }) + " đ"
+      : v.toLocaleString("vi-VN", { maximumFractionDigits: 1 }) + " kWh";
+  const fmtTick = (v: number) =>
+    isCost && v >= 1_000_000
+      ? (v / 1_000_000).toLocaleString("vi-VN", { maximumFractionDigits: 1 }) + " tr"
+      : Math.round(v).toLocaleString("vi-VN");
+
   const width = 900;
-  const padding = { top: 16, right: 16, bottom: 28, left: 48 };
+  const padding = { top: 16, right: 16, bottom: 28, left: isCost ? 60 : 48 };
   const innerW = width - padding.left - padding.right;
   const innerH = height - padding.top - padding.bottom;
 
-  const values = data.map((d) => d.consTotal);
+  const values = data.map(valueOf);
   const max = Math.max(...values, 1);
   const min = 0;
 
   const x = (i: number) => padding.left + (i / (data.length - 1)) * innerW;
   const y = (v: number) => padding.top + innerH - ((v - min) / (max - min || 1)) * innerH;
 
-  const linePoints = data.map((d, i) => `${x(i).toFixed(1)},${y(d.consTotal).toFixed(1)}`);
+  const linePoints = data.map((d, i) => `${x(i).toFixed(1)},${y(valueOf(d)).toFixed(1)}`);
   const areaPoints = `${x(0)},${y(0)} ${linePoints.join(" ")} ${x(data.length - 1)},${y(0)}`;
 
   const ticks = 4;
@@ -37,23 +56,42 @@ export function TrendLineChart({
 
   const labelStep = Math.max(1, Math.ceil(data.length / 10));
 
+  const dotColor = (i: number) => {
+    if (i === 0) return baseColor;
+    const cur = valueOf(data[i]);
+    const prev = valueOf(data[i - 1]);
+    if (cur > prev) return UP;
+    if (cur < prev) return DOWN;
+    return baseColor;
+  };
+
   return (
     <svg viewBox={`0 0 ${width} ${height}`} width="100%" height={height}>
       {tickValues.map((tv, i) => (
         <g key={i}>
           <line x1={padding.left} x2={width - padding.right} y1={y(tv)} y2={y(tv)} stroke="#f0f0f0" strokeWidth={1} />
           <text x={padding.left - 8} y={y(tv) + 4} textAnchor="end" fontSize={11} fill="#8c8c8c">
-            {Math.round(tv).toLocaleString("vi-VN")}
+            {fmtTick(tv)}
           </text>
         </g>
       ))}
-      <polygon points={areaPoints} fill="#faad14" opacity={0.1} />
-      <polyline points={linePoints.join(" ")} fill="none" stroke="#faad14" strokeWidth={2.5} />
-      {data.map((d, i) => (
-        <circle key={i} cx={x(i)} cy={y(d.consTotal)} r={3} fill="#fff" stroke="#faad14" strokeWidth={2}>
-          <title>{`${d.label}: ${d.consTotal.toFixed(1)} kWh`}</title>
-        </circle>
-      ))}
+      <polygon points={areaPoints} fill={baseColor} opacity={0.1} />
+      <polyline points={linePoints.join(" ")} fill="none" stroke={baseColor} strokeWidth={2.5} />
+      {data.map((d, i) => {
+        const cur = valueOf(d);
+        const prev = i > 0 ? valueOf(data[i - 1]) : null;
+        const delta = prev == null ? null : cur - prev;
+        return (
+          <circle key={i} cx={x(i)} cy={y(cur)} r={4} fill={dotColor(i)} stroke="#fff" strokeWidth={1.5}>
+            <title>
+              {`${d.label}: ${fmtValue(cur)}` +
+                (delta == null
+                  ? ""
+                  : ` (${delta >= 0 ? "▲" : "▼"} ${fmtValue(Math.abs(delta))} so ngày trước)`)}
+            </title>
+          </circle>
+        );
+      })}
       {data.map((d, i) =>
         i % labelStep === 0 || i === data.length - 1 ? (
           <text key={i} x={x(i)} y={height - 6} textAnchor="middle" fontSize={11} fill="#8c8c8c">
