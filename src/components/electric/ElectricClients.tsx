@@ -158,6 +158,7 @@ type ElectricMeter = {
   registerAddr: number;
   tu: number;
   ti: number;
+  sortOrder: number;
   isNonProduction?: boolean;
   note?: string | null;
   factory?: Factory | null;
@@ -549,6 +550,7 @@ export function ElectricCatalogClient() {
             registerAddr: 0,
             tu: 1,
             ti: 1,
+            sortOrder: 0,
           },
     );
     setMeterModalOpen(true);
@@ -708,6 +710,12 @@ export function ElectricCatalogClient() {
       dataIndex: "code",
       width: 110,
       render: (value: string) => <b>{value}</b>,
+    },
+    {
+      title: "Thứ tự",
+      dataIndex: "sortOrder",
+      width: 90,
+      align: "right",
     },
     { title: "Tên đồng hồ", dataIndex: "name" },
     {
@@ -1101,6 +1109,7 @@ export function ElectricCatalogClient() {
                           registerAddr: 0,
                           tu: 1,
                           ti: 1,
+                          sortOrder: 0,
                         });
                         setEditingMeter(null);
                         setMeterModalOpen(true);
@@ -1119,6 +1128,12 @@ export function ElectricCatalogClient() {
                         dataIndex: "code",
                         width: 110,
                         render: (value: string) => <b>{value}</b>,
+                      },
+                      {
+                        title: "Thứ tự",
+                        dataIndex: "sortOrder",
+                        width: 90,
+                        align: "right",
                       },
                       { title: "Tên đồng hồ", dataIndex: "name" },
                       {
@@ -1564,13 +1579,22 @@ export function ElectricCatalogClient() {
                 <Input />
               </Form.Item>
             </Col>
-            <Col xs={24} md={16}>
+            <Col xs={24} md={10}>
               <Form.Item
                 name="name"
                 label="Tên đồng hồ"
                 rules={[{ required: true }]}
               >
                 <Input />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={6}>
+              <Form.Item
+                name="sortOrder"
+                label="Thứ tự hiển thị"
+                tooltip="Số nhỏ hơn sẽ nằm trên. Nếu bằng nhau, hệ thống sắp theo mã đồng hồ."
+              >
+                <InputNumber min={0} precision={0} style={{ width: "100%" }} />
               </Form.Item>
             </Col>
             <Form.Item

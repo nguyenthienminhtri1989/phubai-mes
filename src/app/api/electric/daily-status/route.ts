@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
         take: 1,
       },
     },
-    orderBy: { code: "asc" },
+    orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
   });
 
   const meterIds = meters.map((meter) => meter.id);

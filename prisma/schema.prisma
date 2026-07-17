@@ -137,6 +137,7 @@ model PowerMeter {
   registerAddr  Int               @default(0)
   tu            Float             @default(1)
   ti            Float             @default(1)
+  sortOrder     Int               @default(0)
   // true = dong ho phuc vu muc dich NGOAI SAN XUAT (van phong, bom chua chay...).
   // Van nam trong cong to EVN cua nha may nen VAN tham gia phan bo nguoc (giu trong mau so rate),
   // chi khac o cho bao cao gom chi phi thanh 2 nhom: San xuat / Ngoai san xuat.
@@ -156,6 +157,7 @@ model PowerMeter {
   @@index([groupId])
   @@index([transformerId])
   @@index([transformerUnitId])
+  @@index([sortOrder])
   @@index([isActive, isAuto])
 }
 
