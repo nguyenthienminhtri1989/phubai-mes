@@ -166,6 +166,7 @@ type ElectricMeter = {
   transformerUnit?: TransformerUnit | null;
   todayRecord?: PowerRecord | null;
   lastRecord?: PowerRecord | null;
+  previousConsTotal?: number | null;
   avgConsumption7d?: number | null;
 };
 
@@ -1914,6 +1915,39 @@ function evaluateDraft(
   return { status: "ok", delta, cons, message: "Chênh lệch hợp lệ." };
 }
 
+function getCurrentConsumption(meter: ElectricMeter, draft?: DailyDraft) {
+  if (meter.todayRecord) return Number(meter.todayRecord.consTotal || 0);
+  if (meter.type === 2) return null;
+  const evaluation = evaluateDraft(meter, draft);
+  if (evaluation.status === "empty" || evaluation.status === "error") return null;
+  return evaluation.cons;
+}
+
+function ConsumptionTrend({
+  current,
+  previous,
+}: {
+  current: number | null;
+  previous: number | null;
+}) {
+  if (current === null || previous === null) return null;
+  const diff = current - previous;
+  if (Math.abs(diff) < 0.005) {
+    return (
+      <Tag color="default" style={{ margin: 0 }}>
+        Ngang hôm trước
+      </Tag>
+    );
+  }
+  const color = diff > 0 ? "red" : "green";
+  const Icon = diff > 0 ? ArrowUpOutlined : ArrowDownOutlined;
+  return (
+    <Tag color={color} icon={<Icon />} style={{ margin: 0 }}>
+      {diff > 0 ? "Cao hơn" : "Thấp hơn"} {fmtInput.format(Math.abs(diff))}
+    </Tag>
+  );
+}
+
 function DraftStatusChip({ evaluation }: { evaluation: DraftEvaluation }) {
   if (evaluation.status === "empty") {
     return <Text type="secondary">---</Text>;
@@ -2647,7 +2681,7 @@ export function ElectricDailyInputClient() {
           showSizeChanger: true,
           pageSizeOptions: [10, 15, 25, 50],
         }}
-        scroll={{ x: 1280 }}
+        scroll={{ x: 1460 }}
         rowClassName={(record) => (record.todayRecord ? "row-done" : "")}
         onRow={(record) => {
           // Đã chốt: nền xanh đậm hơn + viền trái đậm để dễ liếc. Hover được tắt
@@ -2844,6 +2878,33 @@ export function ElectricDailyInputClient() {
                       Reset / thay đồng hồ
                     </Text>
                   </Space>
+                </Space>
+              );
+            },
+          },
+          {
+            title: "Số chữ hôm trước",
+            width: 180,
+            render: (_: unknown, record: ElectricMeter) => {
+              const previous =
+                record.previousConsTotal === undefined ||
+                record.previousConsTotal === null
+                  ? null
+                  : Number(record.previousConsTotal);
+              const current = getCurrentConsumption(record, drafts[record.id]);
+              return (
+                <Space direction="vertical" size={4}>
+                  <Text strong style={{ fontSize: 15 }}>
+                    {previous === null ? "---" : fmtInput.format(previous)}
+                  </Text>
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    {record.lastRecord
+                      ? dayjs(record.lastRecord.recordDate).format(
+                          "DD/MM/YYYY",
+                        )
+                      : "Chưa có"}
+                  </Text>
+                  <ConsumptionTrend current={current} previous={previous} />
                 </Space>
               );
             },

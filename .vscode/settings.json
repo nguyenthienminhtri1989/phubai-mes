@@ -1,0 +1,58 @@
+{
+  "sqltools.connections": [
+    {
+      "ssh": "Enabled",
+      "previewLimit": 50,
+      "server": "localhost",
+      "port": 5432,
+      "sshOptions": {
+        "port": 22,
+        "host": "221.132.16.177",
+        "username": "deploy",
+        "password": "admin@1989"
+      },
+      "driver": "PostgreSQL",
+      "name": "phubai-hrm-app",
+      "database": "phubai_hrm_db",
+      "username": "phubai_hrm_user",
+      "password": "9116966ced8d247e6ff14fa24fda23620e3fb9e2a46fcd78",
+      "connectionTimeout": 30
+    },
+    {
+      "ssh": "Enabled",
+      "previewLimit": 50,
+      "server": "localhost",
+      "port": 5432,
+      "sshOptions": {
+        "port": 22,
+        "host": "221.132.16.177",
+        "username": "deploy",
+        "password": "admin@1989"
+      },
+      "driver": "PostgreSQL",
+      "name": "phubai-erp-app",
+      "database": "phubai_erp_db",
+      "username": "phubai_erp_user",
+      "password": "42f30043c3425094c70e92adebb11c22bedebc87e9fb5143",
+      "connectionTimeout": 30
+    },
+    {
+      "ssh": "Enabled",
+      "previewLimit": 50,
+      "server": "localhost",
+      "port": 5432,
+      "sshOptions": {
+        "port": 22,
+        "host": "221.132.16.177",
+        "username": "deploy",
+        "password": "admin@1989"
+      },
+      "driver": "PostgreSQL",
+      "name": "phubai-mes-app",
+      "database": "phubai_mes_db",
+      "username": "phubai_mes_user",
+      "password": "4369f5dc4a5677e5c91c2e3bbd2f9b970d34ad223ebef66c",
+      "connectionTimeout": 30
+    }
+  ]
+}

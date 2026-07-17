@@ -97,10 +97,12 @@ export async function GET(request: NextRequest) {
   return NextResponse.json(
     meters.map((meter) => {
       const { records, ...rest } = meter;
+      const lastRecord = lastByMeter.get(meter.id) || null;
       return {
         ...rest,
         todayRecord: records[0] || null,
-        lastRecord: lastByMeter.get(meter.id) || null,
+        lastRecord,
+        previousConsTotal: lastRecord?.consTotal ?? null,
         avgConsumption7d: avgByMeter.get(meter.id) ?? null,
       };
     }),
