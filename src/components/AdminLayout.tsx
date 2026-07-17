@@ -9,6 +9,7 @@ import {
   DollarOutlined,
   FormOutlined,
   KeyOutlined,
+  LineChartOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
@@ -96,6 +97,10 @@ const pageTitle: Record<string, { label: string; icon: ReactNode }> = {
     label: "Báo cáo điện năng",
     icon: <BarChartOutlined />,
   },
+  "/electric/meter-trend": {
+    label: "Xu hướng đồng hồ",
+    icon: <LineChartOutlined />,
+  },
   "/electric/prices": { label: "Đơn giá điện", icon: <DollarOutlined /> },
   "/electric/catalog": {
     label: "Danh mục điện năng",
@@ -142,6 +147,11 @@ function buildMenuItems(role?: string): MenuProps["items"] {
           key: "/electric/reports",
           icon: <BarChartOutlined />,
           label: "Báo cáo điện năng",
+        },
+        {
+          key: "/electric/meter-trend",
+          icon: <LineChartOutlined />,
+          label: "Xu hướng đồng hồ",
         },
         {
           key: "/electric/daily-input",

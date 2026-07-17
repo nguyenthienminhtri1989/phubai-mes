@@ -212,3 +212,173 @@ export function DonutChart({
     </div>
   );
 }
+
+export function MultiTrendChart({
+  dates,
+  series,
+  kind = "line",
+  height = 340,
+}: {
+  dates: string[];
+  series: { meterCode: string; meterName: string; points: (number | null)[] }[];
+  kind?: "line" | "column";
+  height?: number;
+}) {
+  if (dates.length === 0 || series.length === 0)
+    return <NoData text="Chọn đồng hồ để xem xu hướng tiêu thụ" />;
+
+  const width = 960;
+  const legendH = Math.ceil(series.length / 3) * 22 + 8;
+  const padding = { top: 16, right: 16, bottom: 34 + legendH, left: 56 };
+  const innerW = width - padding.left - padding.right;
+  const innerH = height - padding.top - padding.bottom;
+
+  const allVals = series.flatMap((s) =>
+    s.points.filter((v): v is number => v != null),
+  );
+  const max = Math.max(...allVals, 1);
+  const min = 0;
+
+  const n = dates.length;
+  const xBand = innerW / Math.max(n, 1);
+  const xCenter = (i: number) => padding.left + xBand * (i + 0.5);
+  const y = (v: number) =>
+    padding.top + innerH - ((v - min) / (max - min || 1)) * innerH;
+
+  const fmtLabel = (d: string) =>
+    d.length === 10
+      ? d.slice(8, 10) + "/" + d.slice(5, 7)
+      : d.slice(5, 7) + "/" + d.slice(0, 4);
+  const fmtVal = (v: number) =>
+    v.toLocaleString("vi-VN", { maximumFractionDigits: 1 });
+
+  const ticks = 4;
+  const tickValues = Array.from({ length: ticks + 1 }, (_, i) => (max / ticks) * i);
+  const labelStep = Math.max(1, Math.ceil(n / 12));
+  const color = (i: number) => palette[i % palette.length];
+
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} width="100%" height={height}>
+      {tickValues.map((tv, i) => (
+        <g key={i}>
+          <line
+            x1={padding.left}
+            x2={width - padding.right}
+            y1={y(tv)}
+            y2={y(tv)}
+            stroke="#f0f0f0"
+            strokeWidth={1}
+          />
+          <text
+            x={padding.left - 8}
+            y={y(tv) + 4}
+            textAnchor="end"
+            fontSize={11}
+            fill="#8c8c8c"
+          >
+            {Math.round(tv).toLocaleString("vi-VN")}
+          </text>
+        </g>
+      ))}
+
+      {kind === "column"
+        ? series.map((s, si) => {
+            const groupW = xBand * 0.7;
+            const barW = groupW / series.length;
+            return (
+              <g key={si}>
+                {s.points.map((v, i) =>
+                  v == null ? null : (
+                    <rect
+                      key={i}
+                      x={xCenter(i) - groupW / 2 + si * barW}
+                      y={y(v)}
+                      width={Math.max(barW - 1, 1)}
+                      height={Math.max(y(0) - y(v), 0)}
+                      fill={color(si)}
+                      rx={1}
+                    >
+                      <title>{`${s.meterCode} • ${fmtLabel(dates[i])}: ${fmtVal(v)} kWh`}</title>
+                    </rect>
+                  ),
+                )}
+              </g>
+            );
+          })
+        : series.map((s, si) => {
+            const segs: string[] = [];
+            let cur: string[] = [];
+            s.points.forEach((v, i) => {
+              if (v == null) {
+                if (cur.length) {
+                  segs.push(cur.join(" "));
+                  cur = [];
+                }
+              } else {
+                cur.push(`${xCenter(i).toFixed(1)},${y(v).toFixed(1)}`);
+              }
+            });
+            if (cur.length) segs.push(cur.join(" "));
+            return (
+              <g key={si}>
+                {segs.map((pts, k) => (
+                  <polyline
+                    key={k}
+                    points={pts}
+                    fill="none"
+                    stroke={color(si)}
+                    strokeWidth={2.5}
+                  />
+                ))}
+                {s.points.map((v, i) =>
+                  v == null ? null : (
+                    <circle
+                      key={i}
+                      cx={xCenter(i)}
+                      cy={y(v)}
+                      r={3}
+                      fill="#fff"
+                      stroke={color(si)}
+                      strokeWidth={2}
+                    >
+                      <title>{`${s.meterCode} • ${fmtLabel(dates[i])}: ${fmtVal(v)} kWh`}</title>
+                    </circle>
+                  ),
+                )}
+              </g>
+            );
+          })}
+
+      {dates.map((d, i) =>
+        i % labelStep === 0 || i === n - 1 ? (
+          <text
+            key={i}
+            x={xCenter(i)}
+            y={height - legendH - 10}
+            textAnchor="middle"
+            fontSize={11}
+            fill="#8c8c8c"
+          >
+            {fmtLabel(d)}
+          </text>
+        ) : null,
+      )}
+
+      {series.map((s, si) => {
+        const col = si % 3;
+        const rowLg = Math.floor(si / 3);
+        const lx = padding.left + col * (innerW / 3);
+        const ly = height - legendH + 12 + rowLg * 22;
+        const label = `${s.meterCode} — ${s.meterName}`;
+        return (
+          <g key={si}>
+            <rect x={lx} y={ly - 9} width={11} height={11} rx={2} fill={color(si)} />
+            <text x={lx + 17} y={ly} fontSize={12} fill="#595959">
+              {label.length > 34 ? label.slice(0, 33) + "…" : label}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
