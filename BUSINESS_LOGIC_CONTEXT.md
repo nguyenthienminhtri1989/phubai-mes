@@ -594,10 +594,12 @@ costAllocated(record) = consTotal(record) x rate(nha may)
 ## 2026-07-18 - Sap xep dong ho trung the theo ten
 
 ### Current State Update
-- Cac danh sach dong ho trung the (type=2) trong nhap chi so trung the, danh muc, bao cao EVN va cos phi duoc sap theo `PowerMeter.name` tang dan, fallback `code`.
+- Cac danh sach dong ho trung the (type=2) trong nhap chi so trung the, danh muc va bao cao EVN duoc sap theo `PowerMeter.name` tang dan, fallback `code`.
+- Rieng trang cos phi trung the sap bang nhat ky theo `date` giam dan, sau do theo `factoryName` tang dan co numeric collation (`Nha may 1`, `Nha may 2`, `Nha may 10`), roi moi den ten/ma cong to.
+- Bao cao dien nang va carbon sap cac bang/bieu do theo nha may bang `factoryName` tang dan co numeric collation, khong sap theo san luong/phat thai giam dan; bang cong to trung the sap theo `factoryName`, roi `meterName`, roi `meterCode`.
 - Dong ho ha the van giu thu tu `sortOrder` tang dan roi den `code`, de khong pha co che nguoi dung tu chinh dong tren/duoi trong danh muc.
 
 ### Feature Ledger Update
 | Ngay | Thay doi | File chinh | Verify |
 | --- | --- | --- | --- |
-| 2026-07-18 | Doi thu tu hien thi dong ho trung the tu uu tien ma dong ho sang ten dong ho; giu nguyen `sortOrder` cho ha the. | `src/app/api/electric/daily-status/route.ts`, `src/components/electric/ElectricClients.tsx`, `src/app/api/electric/reports/route.ts`, `src/app/api/electric/power-factor/route.ts` | `npx eslint <cac file vua sua>`, `npm run build` |
+| 2026-07-18 | Doi thu tu hien thi dong ho trung the va cac tong hop theo nha may tu uu tien ma/san luong sang ten nha may/ten dong ho co numeric collation; giu nguyen `sortOrder` cho ha the. | `src/app/api/electric/daily-status/route.ts`, `src/components/electric/ElectricClients.tsx`, `src/app/api/electric/reports/route.ts`, `src/app/api/electric/carbon/route.ts`, `src/app/api/electric/power-factor/route.ts` | `npx eslint <cac file vua sua>`, `npm run build` |

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 
 const MV_TYPE = 2;
 const NO_FACTORY = "__none__";
+const collator = new Intl.Collator("vi", { numeric: true, sensitivity: "base" });
 
 type Bucket = {
   billedKwh: number;
@@ -27,6 +28,16 @@ function add(bucket: Bucket, kwh: number, kg: number, isMv: boolean) {
 
 function ton(kg: number) {
   return kg / 1000;
+}
+
+function compareFactoryName(
+  a: { factoryName: string; factoryCode?: string },
+  b: { factoryName: string; factoryCode?: string },
+) {
+  return (
+    collator.compare(a.factoryName, b.factoryName) ||
+    collator.compare(a.factoryCode || "", b.factoryCode || "")
+  );
 }
 
 export async function GET(request: NextRequest) {
@@ -191,7 +202,7 @@ export async function GET(request: NextRequest) {
         emissionsTon: ton(item.emissionsKg),
         avgFactorKgCo2ePerKwh: item.billedKwh > 0 ? item.emissionsKg / item.billedKwh : 0,
       }))
-      .sort((a, b) => b.emissionsKg - a.emissionsKg),
+      .sort(compareFactoryName),
     byGroup: Array.from(byGroup.values())
       .map((item) => ({ ...item, emissionsTon: ton(item.emissionsKg) }))
       .sort((a, b) => b.internalKwh - a.internalKwh),

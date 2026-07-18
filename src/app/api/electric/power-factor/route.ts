@@ -14,6 +14,23 @@ import { prisma } from "@/lib/prisma";
 
 // EVN phat khi cos phi < 0.9; dat nguong canh bao 0.91 de bao SOM, con kip xu ly.
 const PF_WARNING = 0.91;
+const collator = new Intl.Collator("vi", { numeric: true, sensitivity: "base" });
+
+type PowerFactorRow = {
+  date: string;
+  meterCode: string;
+  meterName: string;
+  factoryName: string;
+};
+
+function compareRows(a: PowerFactorRow, b: PowerFactorRow) {
+  return (
+    b.date.localeCompare(a.date) ||
+    collator.compare(a.factoryName, b.factoryName) ||
+    collator.compare(a.meterName, b.meterName) ||
+    collator.compare(a.meterCode, b.meterCode)
+  );
+}
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -45,24 +62,26 @@ export async function GET(request: NextRequest) {
     return nums.length ? Math.min(...nums) : null;
   };
 
-  const rows = logs.map((log) => {
-    const factory = log.meter.factory || log.meter.transformer?.factory || null;
-    const pfMin = minOf([log.pfA, log.pfB, log.pfC]);
-    return {
-      id: log.id,
-      date: log.recordDate.toISOString().slice(0, 10),
-      readAt: log.readAt ? log.readAt.toISOString() : null,
-      meterId: log.meterId,
-      meterCode: log.meter.code,
-      meterName: log.meter.name,
-      factoryName: factory?.name || "Chua gan nha may",
-      pfA: log.pfA,
-      pfB: log.pfB,
-      pfC: log.pfC,
-      pfMin,
-      isLow: pfMin != null && pfMin <= PF_WARNING,
-    };
-  });
+  const rows = logs
+    .map((log) => {
+      const factory = log.meter.factory || log.meter.transformer?.factory || null;
+      const pfMin = minOf([log.pfA, log.pfB, log.pfC]);
+      return {
+        id: log.id,
+        date: log.recordDate.toISOString().slice(0, 10),
+        readAt: log.readAt ? log.readAt.toISOString() : null,
+        meterId: log.meterId,
+        meterCode: log.meter.code,
+        meterName: log.meter.name,
+        factoryName: factory?.name || "Chua gan nha may",
+        pfA: log.pfA,
+        pfB: log.pfB,
+        pfC: log.pfC,
+        pfMin,
+        isLow: pfMin != null && pfMin <= PF_WARNING,
+      };
+    })
+    .sort(compareRows);
 
   // Ban ghi MOI NHAT cua tung cong to -> dung cho the canh bao dau trang.
   // rows da sap xep ngay giam dan nen ban gap dau tien cua moi meter chinh la moi nhat.
@@ -71,8 +90,9 @@ export async function GET(request: NextRequest) {
     if (!latestByMeter.has(row.meterId)) latestByMeter.set(row.meterId, row);
   }
   const latest = Array.from(latestByMeter.values()).sort((a, b) =>
-    a.meterName.localeCompare(b.meterName, "vi") ||
-    a.meterCode.localeCompare(b.meterCode, "vi"),
+    collator.compare(a.factoryName, b.factoryName) ||
+    collator.compare(a.meterName, b.meterName) ||
+    collator.compare(a.meterCode, b.meterCode),
   );
 
   return NextResponse.json({

@@ -36,6 +36,7 @@ import { prisma } from "@/lib/prisma";
 
 const MV_TYPE = 2; // Trung thế — công tơ EVN
 const NO_FACTORY = "__none__";
+const collator = new Intl.Collator("vi", { numeric: true, sensitivity: "base" });
 
 function dateKey(date: Date, groupBy: string) {
   const iso = date.toISOString().slice(0, 10);
@@ -45,6 +46,27 @@ function dateKey(date: Date, groupBy: string) {
 function toUnitId(value: string | null) {
   const id = Number(value || 0);
   return id || null;
+}
+
+function compareFactoryName(
+  a: { factoryName: string; factoryCode?: string },
+  b: { factoryName: string; factoryCode?: string },
+) {
+  return (
+    collator.compare(a.factoryName, b.factoryName) ||
+    collator.compare(a.factoryCode || "", b.factoryCode || "")
+  );
+}
+
+function compareMvMeter(
+  a: { factoryName: string; meterName: string; meterCode: string },
+  b: { factoryName: string; meterName: string; meterCode: string },
+) {
+  return (
+    collator.compare(a.factoryName, b.factoryName) ||
+    collator.compare(a.meterName, b.meterName) ||
+    collator.compare(a.meterCode, b.meterCode)
+  );
 }
 
 export async function GET(request: NextRequest) {
@@ -439,12 +461,8 @@ export async function GET(request: NextRequest) {
       a.date.localeCompare(b.date),
     ),
     byMeter: Array.from(byMeterMap.values()).sort((a, b) => b.consTotal - a.consTotal),
-    byMvMeter: Array.from(byMvMeterMap.values()).sort(
-      (a, b) =>
-        a.meterName.localeCompare(b.meterName, "vi") ||
-        a.meterCode.localeCompare(b.meterCode, "vi"),
-    ),
+    byMvMeter: Array.from(byMvMeterMap.values()).sort(compareMvMeter),
     byGroup: Array.from(byGroupMap.values()).sort((a, b) => b.consTotal - a.consTotal),
-    byFactory: byFactory.sort((a, b) => b.billedCons - a.billedCons),
+    byFactory: byFactory.sort(compareFactoryName),
   });
 }
