@@ -440,7 +440,9 @@ export async function GET(request: NextRequest) {
     ),
     byMeter: Array.from(byMeterMap.values()).sort((a, b) => b.consTotal - a.consTotal),
     byMvMeter: Array.from(byMvMeterMap.values()).sort(
-      (a, b) => b.consTotal - a.consTotal,
+      (a, b) =>
+        a.meterName.localeCompare(b.meterName, "vi") ||
+        a.meterCode.localeCompare(b.meterCode, "vi"),
     ),
     byGroup: Array.from(byGroupMap.values()).sort((a, b) => b.consTotal - a.consTotal),
     byFactory: byFactory.sort((a, b) => b.billedCons - a.billedCons),

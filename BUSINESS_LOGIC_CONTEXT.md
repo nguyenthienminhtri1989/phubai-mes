@@ -590,3 +590,14 @@ costAllocated(record) = consTotal(record) x rate(nha may)
 | Ngay | Thay doi | File chinh | Verify |
 | --- | --- | --- | --- |
 | 2026-07-18 | Restore Turbopack as the default dev server for faster local navigation and keep Webpack as a fallback script. | `package.json`, `BUSINESS_LOGIC_CONTEXT.md` | smoke `npm run dev` on port 3002 |
+
+## 2026-07-18 - Sap xep dong ho trung the theo ten
+
+### Current State Update
+- Cac danh sach dong ho trung the (type=2) trong nhap chi so trung the, danh muc, bao cao EVN va cos phi duoc sap theo `PowerMeter.name` tang dan, fallback `code`.
+- Dong ho ha the van giu thu tu `sortOrder` tang dan roi den `code`, de khong pha co che nguoi dung tu chinh dong tren/duoi trong danh muc.
+
+### Feature Ledger Update
+| Ngay | Thay doi | File chinh | Verify |
+| --- | --- | --- | --- |
+| 2026-07-18 | Doi thu tu hien thi dong ho trung the tu uu tien ma dong ho sang ten dong ho; giu nguyen `sortOrder` cho ha the. | `src/app/api/electric/daily-status/route.ts`, `src/components/electric/ElectricClients.tsx`, `src/app/api/electric/reports/route.ts`, `src/app/api/electric/power-factor/route.ts` | `npx eslint <cac file vua sua>`, `npm run build` |

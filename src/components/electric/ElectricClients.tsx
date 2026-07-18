@@ -700,7 +700,14 @@ export function ElectricCatalogClient() {
   );
 
   const mvMeters = useMemo(
-    () => meters.filter((meter) => meter.type === 2),
+    () =>
+      meters
+        .filter((meter) => meter.type === 2)
+        .sort(
+          (a, b) =>
+            a.name.localeCompare(b.name, "vi") ||
+            a.code.localeCompare(b.code, "vi"),
+        ),
     [meters],
   );
 

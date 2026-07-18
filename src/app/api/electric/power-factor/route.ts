@@ -33,7 +33,11 @@ export async function GET(request: NextRequest) {
         },
       },
     },
-    orderBy: [{ recordDate: "desc" }, { meter: { code: "asc" } }],
+    orderBy: [
+      { recordDate: "desc" },
+      { meter: { name: "asc" } },
+      { meter: { code: "asc" } },
+    ],
   });
 
   const minOf = (values: Array<number | null>) => {
@@ -67,7 +71,8 @@ export async function GET(request: NextRequest) {
     if (!latestByMeter.has(row.meterId)) latestByMeter.set(row.meterId, row);
   }
   const latest = Array.from(latestByMeter.values()).sort((a, b) =>
-    a.meterCode.localeCompare(b.meterCode),
+    a.meterName.localeCompare(b.meterName, "vi") ||
+    a.meterCode.localeCompare(b.meterCode, "vi"),
   );
 
   return NextResponse.json({

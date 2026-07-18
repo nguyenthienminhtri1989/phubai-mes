@@ -20,6 +20,10 @@ export async function GET(request: NextRequest) {
 
   const recordDate = toRecordDate(date);
   const meterType = searchParams.get("type") ? Number(searchParams.get("type")) : undefined;
+  const meterOrderBy =
+    meterType === 2
+      ? [{ name: "asc" as const }, { code: "asc" as const }]
+      : [{ sortOrder: "asc" as const }, { code: "asc" as const }];
 
   const meters = await prisma.powerMeter.findMany({
     where: {
@@ -58,7 +62,7 @@ export async function GET(request: NextRequest) {
         take: 1,
       },
     },
-    orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
+    orderBy: meterOrderBy,
   });
 
   const meterIds = meters.map((meter) => meter.id);
