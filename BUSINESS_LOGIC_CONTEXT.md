@@ -578,3 +578,15 @@ costAllocated(record) = consTotal(record) x rate(nha may)
 | Ngày | Thay đổi | File chính | Verify |
 | --- | --- | --- | --- |
 | 2026-07-18 | Thêm quản lý hệ số phát thải CO2 và báo cáo dấu chân carbon từ điện năng | `prisma/schema.prisma`, `src/app/api/electric/emission-factors/route.ts`, `src/app/api/electric/carbon/route.ts`, `src/components/electric/CarbonClient.tsx` | `npx prisma generate`, `npm run build` |
+
+## 2026-07-18 - Dev server uses Turbopack by default
+
+### Current State Update
+- `npm run dev` now runs `next dev --turbopack -p 3002` again because Webpack dev made route switching too slow on the local machine.
+- `npm run dev:webpack` is kept as an explicit fallback command if Turbopack panic recurs.
+- If Turbopack reports `Next.js package not found`, first stop the process holding port 3002, remove `.next`, and restart `npm run dev` before falling back to Webpack.
+
+### Feature Ledger Update
+| Ngay | Thay doi | File chinh | Verify |
+| --- | --- | --- | --- |
+| 2026-07-18 | Restore Turbopack as the default dev server for faster local navigation and keep Webpack as a fallback script. | `package.json`, `BUSINESS_LOGIC_CONTEXT.md` | smoke `npm run dev` on port 3002 |
