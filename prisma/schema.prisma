@@ -186,6 +186,21 @@ model ElectricityPrice {
   updatedAt     DateTime @updatedAt
 }
 
+model EmissionFactor {
+  id                 String   @id @default(cuid())
+  year               Int      @unique
+  factorKgCo2ePerKwh Float
+  source             String?
+  effectiveFrom      DateTime @default(now())
+  note               String?
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([year])
+}
+
 // Phien ban bieu khung gio EVN (VD: CURRENT_2014 dang dung, NEW_2026 da khai bao san nhung chua kich hoat).
 // Chi 1 version isActive=true tai 1 thoi diem - dung de tach tieu thu Ha the AUTO theo Binh thuong/Cao diem/Thap diem.
 model TariffScheduleVersion {

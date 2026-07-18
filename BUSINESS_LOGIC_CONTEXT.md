@@ -558,3 +558,23 @@ costAllocated(record) = consTotal(record) x rate(nha may)
 | 2026-07-14 | FIX cong to trung the khong nhap duoc TU/TI: form an khoi TU/TI khi type=2 nen `tu=ti=1` mai mai -> san luong thieu he so nhan. Bo dieu kien an, them o "He so nhan (TU x TI)" tu tinh, them cot he so + tag do "Chua dat (x1)" vao bang danh muc DH Trung the. Cong thuc trong energy-record.ts va schema KHONG sai, khong them truong moi. | `src/components/electric/ElectricClients.tsx`, `BUSINESS_LOGIC_CONTEXT.md` | `npm run build`, smoke: sua DH trung the -> nhap duoc TU/TI, he so nhan hien dung; bang danh muc hien tag do voi DH chua dat; ban ghi moi co `cons = delta * tu * ti` |
 | 2026-07-14 | Tu dong lay chi so trung the tu portal CSKH EVNCPC: them endpoint `/api/collector/mv-ingest` (x-api-key, dung chung buildPowerRecordValues, BO QUA ngay da co ban ghi -> nhap tay luon thang) + collector `evn-portal-collector.js` (da tai khoan, token cache ~1 nam, POST + body `{}` vi GET tra 405 / body rong tra 411, kiem tra ngaygio phai dung 06:00 hom nay, doi chieu mA_DIEMDO chong lap nham tai khoan, buffer khi mat mang). Lich PM2 nen chay nhieu nhip 06:15/06:30/06:45 de doi portal EVN cap nhat ban doc 06:00; endpoint idempotent nen chay lai khong nhan doi. | `src/app/api/collector/mv-ingest/route.ts`, `scripts/evn-portal-collector.js`, `scripts/evn-accounts.example.json`, `.gitignore`, `BUSINESS_LOGIC_CONTEXT.md` | `node --check scripts/evn-portal-collector.js`, `npm run build`, smoke VPS: `curl -X POST /api/collector/mv-ingest` voi meterCode gia -> `meter-not-found` (401 neu thieu key); smoke mini PC: `node evn-portal-collector.js` -> 3 cong to tra BT/CD/TD, status `created` / `exists-skipped` / `created-baseline`; PM2: `pm2 start evn-portal-collector.js --name evn-collector --cron-restart "15,30,45 6 * * *" --no-autorestart` |
 | 2026-07-14 | Tach moc chot nghiep vu khoi thoi diem cron thuc thi: giu cua so dien ket thuc luc 06:00 (`CLOSING_HOUR`) nhung doi cron tao `PowerRecord` sang 06:15 (`CLOSING_RUN_MINUTE`) de collector co 15 phut ghi du telemetry 06:00 cua cac dong ho; khong doi cong thuc, `recordDate`, schema hay API. | `scripts/energy-cron.js`, `ecosystem.config.cjs`, `HUONG-DAN-DEPLOY-PHUBAI-MES.md`, `PROJECT_SKILLS/phubai-mes-electric/SKILL.md`, `BUSINESS_LOGIC_CONTEXT.md` | `node --check scripts/energy-cron.js`, `node -e "require('./ecosystem.config.cjs')"`, restart/reload `phubai-mes-energy-cron` tren VPS va kiem tra log hien moc 06:00 / thuc thi 06:15 |
+
+
+## 2026-07-18 - Module hệ số phát thải CO2 và dấu chân carbon điện năng
+
+### Current State Update
+- Thêm trang `/electric/carbon` trong sidebar điện năng với tên `Hệ số phát thải CO2` để xem phát thải từ điện năng và quản lý hệ số quy đổi theo năm.
+- Thêm model `EmissionFactor` lưu `year`, `factorKgCo2ePerKwh`, nguồn hệ số, ngày hiệu lực, ghi chú và trạng thái đang áp dụng.
+- Thêm API `/api/electric/emission-factors` cho danh sách/thêm/sửa hệ số phát thải; thao tác ghi dùng quyền quản lý danh mục điện năng.
+- Thêm API `/api/electric/carbon` tổng hợp `PowerRecord.consTotal` theo ngày/tháng, nhà máy, nhóm đồng hồ hạ thế và đồng hồ hạ thế.
+
+### Business Rules Update
+- Công thức quy đổi: `emissionKgCO2e = consTotal(kWh) * factorKgCo2ePerKwh`; giao diện hiển thị tCO2e bằng cách chia cho 1000.
+- Hệ số phát thải được tra theo năm của `recordDate`; nếu thiếu hệ số cho một năm thì API cảnh báo và tạm tính phát thải năm đó bằng 0 để tránh dùng nhầm hệ số.
+- Tổng phát thải Scope 2 của nhà máy dùng lớp đồng hồ trung thế EVN `PowerMeter.type = 2`; đồng hồ hạ thế chỉ dùng cho phân tích nội bộ theo nhóm/đồng hồ.
+- Bộ lọc nhà máy phải dò đủ 3 đường liên kết đang dùng trong module điện: `PowerMeter.factoryId`, `PowerMeter.transformer.factoryId`, và `PowerMeter.transformerUnit.transformer.factoryId`.
+
+### Feature Ledger Update
+| Ngày | Thay đổi | File chính | Verify |
+| --- | --- | --- | --- |
+| 2026-07-18 | Thêm quản lý hệ số phát thải CO2 và báo cáo dấu chân carbon từ điện năng | `prisma/schema.prisma`, `src/app/api/electric/emission-factors/route.ts`, `src/app/api/electric/carbon/route.ts`, `src/components/electric/CarbonClient.tsx` | `npx prisma generate`, `npm run build` |

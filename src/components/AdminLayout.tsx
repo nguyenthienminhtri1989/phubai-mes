@@ -3,6 +3,7 @@
 import {
   BarChartOutlined,
   BulbOutlined,
+  CloudOutlined,
   CloseOutlined,
   DashboardOutlined,
   DatabaseOutlined,
@@ -97,6 +98,10 @@ const pageTitle: Record<string, { label: string; icon: ReactNode }> = {
     label: "Báo cáo điện năng",
     icon: <BarChartOutlined />,
   },
+  "/electric/carbon": {
+    label: "Hệ số phát thải CO2",
+    icon: <CloudOutlined />,
+  },
   "/electric/meter-trend": {
     label: "Xu hướng đồng hồ",
     icon: <LineChartOutlined />,
@@ -147,6 +152,11 @@ function buildMenuItems(role?: string): MenuProps["items"] {
           key: "/electric/reports",
           icon: <BarChartOutlined />,
           label: "Báo cáo điện năng",
+        },
+        {
+          key: "/electric/carbon",
+          icon: <CloudOutlined />,
+          label: "Hệ số phát thải CO2",
         },
         {
           key: "/electric/meter-trend",
