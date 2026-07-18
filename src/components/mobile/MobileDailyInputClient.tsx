@@ -19,6 +19,7 @@ import {
   DatePicker,
   Divider,
   InputNumber,
+  Input,
   Popconfirm,
   Row,
   Segmented,
@@ -90,7 +91,7 @@ type ElectricMeter = {
   avgConsumption7d?: number | null;
 };
 
-type DailyDraft = { currTotal: string; isReset: boolean };
+type DailyDraft = { currTotal: string; isReset: boolean; note: string };
 type DraftStatus = "empty" | "error" | "warn" | "high" | "low" | "ok";
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -241,6 +242,7 @@ export function MobileDailyInputClient() {
         nd[m.id] = {
           currTotal: rec?.currTotal !== undefined && rec?.currTotal !== null ? String(rec.currTotal) : "",
           isReset: rec?.isReset ?? false,
+          note: rec?.note ?? "",
         };
       }
       setDrafts(nd);
@@ -257,7 +259,7 @@ export function MobileDailyInputClient() {
   }, [loadMeters]);
 
   const updateDraft = (id: string, patch: Partial<DailyDraft>) => {
-    setDrafts((prev) => ({ ...prev, [id]: { ...(prev[id] || { currTotal: "", isReset: false }), ...patch } }));
+    setDrafts((prev) => ({ ...prev, [id]: { ...(prev[id] || { currTotal: "", isReset: false, note: "" }), ...patch } }));
   };
 
   const displayed = useMemo(() => meters.filter((m) => {
@@ -288,6 +290,7 @@ export function MobileDailyInputClient() {
       prevTotal: Number(meter.lastRecord?.currTotal ?? 0),
       currTotal: Number(draft.currTotal),
       isReset: draft.isReset,
+      note: draft.note?.trim() ? draft.note.trim() : undefined,
     }));
   }, [selectedDate]);
 
@@ -527,7 +530,6 @@ export function MobileDailyInputClient() {
           const draft = drafts[meter.id];
           const ev = evaluate(meter, draft);
           const prev = Number(meter.lastRecord?.currTotal ?? 0);
-          const avg = meter.avgConsumption7d;
           const isDone = !!meter.todayRecord;
 
           return (
@@ -573,13 +575,27 @@ export function MobileDailyInputClient() {
                     showIcon
                     style={{ borderRadius: 8, marginBottom: 8 }}
                     message={
-                      <Space>
-                        <span>Đã chốt: <b>{fmtNumber.format(Number(meter.todayRecord!.currTotal))}</b></span>
-                        <Tag color={meter.todayRecord!.dataSource === "AUTO" ? "green" : "orange"} style={{ margin: 0 }}>
-                          {meter.todayRecord!.dataSource}
-                        </Tag>
-                        <span style={{ color: "#10b981" }}>{fmtNumber.format(Number(meter.todayRecord!.consTotal))} kWh</span>
-                      </Space>
+                      <div style={{ fontSize: 13, lineHeight: 1.6 }}>
+                        <div>
+                          Đã chốt: <b>{fmtNumber.format(Number(meter.todayRecord!.currTotal))}</b>{" "}
+                          <span style={{ color: "#10b981" }}>
+                            (+{fmtNumber.format(Number(meter.todayRecord!.consTotal))} kWh)
+                          </span>
+                        </div>
+                        {meter.lastRecord ? (
+                          <div style={{ color: "#526174", fontSize: 12 }}>
+                            Kỳ trước: {fmtNumber.format(Number(meter.lastRecord.currTotal))}
+                            {" "}({dayjs(meter.lastRecord.recordDate).format("DD/MM")})
+                          </div>
+                        ) : (
+                          <div style={{ color: "#526174", fontSize: 12 }}>Chỉ số đầu kỳ (mốc gốc)</div>
+                        )}
+                        {meter.todayRecord!.note ? (
+                          <div style={{ color: "#526174", fontSize: 12, marginTop: 2 }}>
+                            📝 {meter.todayRecord!.note}
+                          </div>
+                        ) : null}
+                      </div>
                     }
                   />
                   {canEditDaily && canInputMeter(meter, role, userFactoryIds) && (
@@ -605,31 +621,18 @@ export function MobileDailyInputClient() {
                     style={{
                       background: "#e8f3ff",
                       borderRadius: 8,
-                      padding: "6px 10px",
+                      padding: "8px 12px",
                       marginBottom: 8,
                     }}
                   >
-                    <Row justify="space-between">
-                      <Col>
-                        <Text type="secondary" style={{ fontSize: 12 }}>Kỳ trước</Text>
-                        <div>
-                          <Text strong style={{ fontSize: 16 }}>{meter.lastRecord ? fmtNumber.format(prev) : "---"}</Text>
-                          {meter.lastRecord && (
-                            <Text type="secondary" style={{ fontSize: 11, marginLeft: 6 }}>
-                              ({dayjs(meter.lastRecord.recordDate).format("DD/MM")})
-                            </Text>
-                          )}
-                        </div>
-                      </Col>
-                      <Col style={{ textAlign: "right" }}>
-                        <Text type="secondary" style={{ fontSize: 12 }}>TB 7 ngày</Text>
-                        <div>
-                          <Text style={{ fontSize: 14 }}>
-                            {avg && avg > 0 ? fmtNumber.format(avg) + " kWh" : "---"}
-                          </Text>
-                        </div>
-                      </Col>
-                    </Row>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      Kỳ trước{meter.lastRecord ? " (" + dayjs(meter.lastRecord.recordDate).format("DD/MM") + ")" : ""}
+                    </Text>
+                    <div>
+                      <Text strong style={{ fontSize: 18 }}>
+                        {meter.lastRecord ? fmtNumber.format(prev) : "---"}
+                      </Text>
+                    </div>
                   </div>
 
                   {/* Input */}
@@ -680,6 +683,17 @@ export function MobileDailyInputClient() {
                   {(ev.status === "high" || ev.status === "low") && (
                     <Alert type="info" showIcon message={ev.msg} style={{ marginBottom: 6, borderRadius: 8 }} />
                   )}
+
+                  {/* Note (tùy chọn) */}
+                  <Input.TextArea
+                    placeholder="Ghi chú (tùy chọn) — ví dụ: đồng hồ mờ, đứng sai chỗ, người khác đọc hộ..."
+                    value={draft?.note ?? ""}
+                    onChange={(e) => updateDraft(meter.id, { note: e.target.value })}
+                    rows={2}
+                    maxLength={500}
+                    style={{ marginBottom: 8, borderRadius: 8, fontSize: 13 }}
+                    disabled={!canEditDaily || !canInputMeter(meter, role, userFactoryIds)}
+                  />
 
                   {/* Save button */}
                   <Button
