@@ -106,6 +106,10 @@ const pageTitle: Record<string, { label: string; icon: ReactNode }> = {
     label: "Xu hướng đồng hồ",
     icon: <LineChartOutlined />,
   },
+  "/electric/power-factor": {
+    label: "Hệ số cos φ",
+    icon: <BulbOutlined />,
+  },
   "/electric/prices": { label: "Đơn giá điện", icon: <DollarOutlined /> },
   "/electric/catalog": {
     label: "Danh mục điện năng",
@@ -162,6 +166,11 @@ function buildMenuItems(role?: string): MenuProps["items"] {
           key: "/electric/meter-trend",
           icon: <LineChartOutlined />,
           label: "Xu hướng đồng hồ",
+        },
+        {
+          key: "/electric/power-factor",
+          icon: <BulbOutlined />,
+          label: "Hệ số cos φ",
         },
         {
           key: "/electric/daily-input",

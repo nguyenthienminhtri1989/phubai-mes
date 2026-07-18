@@ -54,6 +54,9 @@ const EVN_LOGIN_URL = (process.env.EVN_LOGIN_URL || "https://cskh-api.cpc.vn/api
 const EVN_DATA_BASE = (process.env.EVN_DATA_BASE || "https://cskh-api.cpc.vn/api/remote/dspm").replace(/\/+$/, "");
 const ACCOUNTS_FILE = path.resolve(process.env.EVN_ACCOUNTS_FILE || "./evn-accounts.json");
 const TOKEN_DIR = path.join(process.cwd(), ".evn-tokens");
+// Nguong canh bao cos phi. EVN phat khi cos phi < 0.9; dat 0.91 de canh bao SOM,
+// con kip thoi gian kiem tra/thay tu bu truoc khi bi phat.
+const PF_WARNING = 0.91;
 const BUFFER_FILE = path.join(process.cwd(), "evn-mv-buffer.jsonl");
 
 for (const [k, v] of Object.entries({ API_BASE_URL: API_BASE, ENERGY_API_KEY: API_KEY })) {
@@ -210,12 +213,23 @@ async function readAccount(account) {
   }
 
   const yesterday = vnDateParts(-1);
+  // Cos phi: ban do TUC THOI tai thoi diem 06:00 sang nay -> gan cho NGAY HOM NAY,
+  // KHONG lui 1 ngay nhu chi so san luong (xem chu thich model PowerFactorLog trong schema).
+  const pf = {
+    date: `${today.y}-${today.m}-${today.d}`,
+    readAt: row.ngaygio || null,
+    a: Number.isFinite(Number(row.pF_A)) ? Number(row.pF_A) : null,
+    b: Number.isFinite(Number(row.pF_B)) ? Number(row.pF_B) : null,
+    c: Number.isFinite(Number(row.pF_C)) ? Number(row.pF_C) : null,
+  };
+
   return {
     meterCode: account.meterCode,
     recordDate: `${yesterday.y}-${yesterday.m}-${yesterday.d}`,
     currNormal,
     currPeak,
     currOffPeak,
+    powerFactor: pf,
     note: `EVN ${account.customerPoint} luc ${row.ngaygio}${row.chuoI_GIA ? ` | Gia EVN: ${row.chuoI_GIA}` : ""}`,
   };
 }
@@ -271,7 +285,16 @@ async function main() {
     try {
       const reading = await readAccount(account);
       fresh.push(reading);
-      console.log(`  + ${reading.meterCode}: BT=${reading.currNormal} CD=${reading.currPeak} TD=${reading.currOffPeak} -> recordDate=${reading.recordDate}`);
+      const pf = reading.powerFactor;
+      const pfValues = [pf.a, pf.b, pf.c].filter((v) => typeof v === "number");
+      const pfMin = pfValues.length ? Math.min(...pfValues) : null;
+      const pfText = pfValues.length
+        ? ` | cosφ A=${pf.a ?? "-"} B=${pf.b ?? "-"} C=${pf.c ?? "-"}`
+        : "";
+      console.log(`  + ${reading.meterCode}: BT=${reading.currNormal} CD=${reading.currPeak} TD=${reading.currOffPeak} -> recordDate=${reading.recordDate}${pfText}`);
+      if (pfMin != null && pfMin <= PF_WARNING) {
+        console.warn(`  !! ${reading.meterCode}: COS PHI THAP (${pfMin}) <= ${PF_WARNING} — kiem tra tu bu!`);
+      }
     } catch (err) {
       failed += 1;
       console.error(`  - ${err.message}`);

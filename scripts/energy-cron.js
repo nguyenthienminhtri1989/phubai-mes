@@ -371,7 +371,14 @@ async function closeDailyRecords() {
   const deletedData = await pool.query('delete from "PowerTelemetry" where "timestamp" < $1', [sixMonthsAgo]);
   console.log(`[Don dep] Da xoa ${deletedData.rowCount} telemetry cu hon 6 thang.`);
 
-  return { closed, deletedTelemetry: deletedData.rowCount };
+  // Cos phi chi phuc vu theo doi xu huong ngan han (thay tu bu kip thoi), khong dung tinh tien
+  // -> giu 35 ngay la du xem 1 thang gan nhat, khong can luu lau.
+  const pfCutoff = new Date();
+  pfCutoff.setDate(pfCutoff.getDate() - 35);
+  const deletedPf = await pool.query('delete from "PowerFactorLog" where "recordDate" < $1', [pfCutoff]);
+  console.log(`[Don dep] Da xoa ${deletedPf.rowCount} ban ghi cos phi cu hon 35 ngay.`);
+
+  return { closed, deletedTelemetry: deletedData.rowCount, deletedPowerFactor: deletedPf.rowCount };
 }
 
 async function printStatus() {

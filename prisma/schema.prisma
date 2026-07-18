@@ -151,6 +151,7 @@ model PowerMeter {
   transformerUnit PowerTransformerUnit? @relation(fields: [transformerUnitId], references: [id], onDelete: SetNull)
   records       PowerRecord[]
   telemetry     PowerTelemetry[]
+  powerFactors  PowerFactorLog[]
   liveReading   PowerLiveReading?
 
   @@index([factoryId])
@@ -292,4 +293,35 @@ model PowerRecord {
   @@index([recordDate])
   @@index([meterId])
   @@index([dataSource])
+}
+
+// Cos phi (he so cong suat) lay tu portal EVN cung luc voi chi so 06:00 moi ngay.
+// MUC DICH: chi de phong dien theo doi xu huong, phat hien tut cos phi -> thay tu bu kip thoi.
+// KHONG dung de tinh tien, KHONG anh huong PowerRecord.
+//
+// VI SAO LA BANG RIENG chu khong them cot vao PowerRecord:
+// endpoint /api/collector/mv-ingest BO QUA khi PowerRecord da ton tai (exists-skipped, de
+// "nhap tay luon thang"). Neu nhet cos phi vao PowerRecord thi nhung ngay nguoi van hanh da
+// nhap tay truoc se KHONG BAO GIO ghi duoc cos phi. Bang rieng cho phep upsert cos phi doc lap.
+//
+// LUU Y NGAY (khac PowerRecord!): PowerRecord.recordDate = HOM QUA vi so 06:00 do san luong
+// ca ngay hom truoc. Con cos phi la ban do TUC THOI tai dung thoi diem 06:00 SANG NAY, nen
+// recordDate o day = NGAY DOC SO (hom nay), khong lui 1 ngay. Dung "sua" cho giong PowerRecord.
+//
+// Chi giu ~35 ngay gan nhat, energy-cron tu don dep.
+model PowerFactorLog {
+  id         String     @id @default(cuid())
+  recordDate DateTime // ngay doc so (hom nay), KHONG lui 1 ngay
+  meterId    String
+  readAt     DateTime? // moc thoi gian that cua ban doc (truong `ngaygio` tu portal EVN)
+  pfA        Float? // cos phi pha A
+  pfB        Float? // cos phi pha B
+  pfC        Float? // cos phi pha C
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  meter      PowerMeter @relation(fields: [meterId], references: [id], onDelete: Cascade)
+
+  @@unique([recordDate, meterId])
+  @@index([recordDate])
+  @@index([meterId])
 }

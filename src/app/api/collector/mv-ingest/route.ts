@@ -27,7 +27,53 @@ type IncomingMvReading = {
   currPeak?: unknown;
   currOffPeak?: unknown;
   note?: unknown;
+  powerFactor?: unknown;
 };
+
+type IncomingPowerFactor = {
+  date?: unknown;
+  readAt?: unknown;
+  a?: unknown;
+  b?: unknown;
+  c?: unknown;
+};
+
+const toPf = (value: unknown) => {
+  const n = Number(value);
+  // cos phi hop le trong khoang (0, 1]. Portal tra 0 khi khong do duoc -> coi nhu khong co.
+  return Number.isFinite(n) && n > 0 && n <= 1 ? n : null;
+};
+
+/**
+ * Ghi cos phi vao PowerFactorLog. GOI DOC LAP voi logic tao PowerRecord:
+ * PowerRecord bi BO QUA khi da ton tai (de nhap tay luon thang), nhung cos phi thi
+ * VAN PHAI ghi — neu khong, ngay nao nguoi van hanh nhap tay truoc se mat cos phi.
+ * Dung upsert nen chay lai script bao nhieu lan cung khong nhan doi.
+ */
+async function savePowerFactor(meterId: string, raw: unknown) {
+  const pf = (raw || {}) as IncomingPowerFactor;
+  const dateStr = typeof pf.date === "string" ? pf.date : "";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return;
+
+  const pfA = toPf(pf.a);
+  const pfB = toPf(pf.b);
+  const pfC = toPf(pf.c);
+  if (pfA == null && pfB == null && pfC == null) return; // khong co so nao dung -> bo qua
+
+  const readAt =
+    typeof pf.readAt === "string" && !Number.isNaN(Date.parse(pf.readAt))
+      ? new Date(pf.readAt)
+      : null;
+
+  const recordDate = toRecordDate(dateStr);
+  const data = { readAt, pfA, pfB, pfC };
+
+  await prisma.powerFactorLog.upsert({
+    where: { recordDate_meterId: { recordDate, meterId } },
+    create: { meterId, recordDate, ...data },
+    update: data,
+  });
+}
 
 export async function POST(request: NextRequest) {
   const guard = requireCollectorKey(request);
@@ -71,6 +117,15 @@ export async function POST(request: NextRequest) {
     }
 
     const recordDate = toRecordDate(recordDateStr);
+
+    // Ghi cos phi TRUOC va DOC LAP voi phan PowerRecord ben duoi, vi PowerRecord co the
+    // bi bo qua (exists-skipped) nhung cos phi thi luon can duoc cap nhat.
+    try {
+      await savePowerFactor(meter.id, raw.powerFactor);
+    } catch (err) {
+      console.error(`[mv-ingest] Loi ghi cos phi cho ${meterCode}:`, err);
+      // Khong chan luong chinh: cos phi chi la du lieu theo doi, khong duoc lam hong viec chot so.
+    }
 
     const existing = await prisma.powerRecord.findUnique({
       where: { recordDate_meterId: { recordDate, meterId: meter.id } },
