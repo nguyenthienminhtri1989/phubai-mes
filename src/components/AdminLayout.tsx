@@ -37,7 +37,6 @@ import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { ChangePasswordModal } from "./electric/ChangePasswordModal";
 
-
 // ─── Theme tokens ────────────────────────────────────────────────────────────
 const COLORS = {
   // Nền khu vực nội dung (main): đậm hơn các Card trắng để tạo tương phản rõ.
@@ -99,7 +98,7 @@ const pageTitle: Record<string, { label: string; icon: ReactNode }> = {
     icon: <BarChartOutlined />,
   },
   "/electric/carbon": {
-    label: "Hệ số phát thải CO2",
+    label: "Phát thải CO2",
     icon: <CloudOutlined />,
   },
   "/electric/meter-trend": {
@@ -116,7 +115,10 @@ const pageTitle: Record<string, { label: string; icon: ReactNode }> = {
     icon: <DatabaseOutlined />,
   },
   "/electric/users": { label: "Quản lý người dùng", icon: <TeamOutlined /> },
-  "/mobile/daily-input": { label: "Nhập số (Mobile)", icon: <MobileOutlined /> },
+  "/mobile/daily-input": {
+    label: "Nhập số (Mobile)",
+    icon: <MobileOutlined />,
+  },
 };
 
 // ─── Sidebar menu items ───────────────────────────────────────────────────────
@@ -160,7 +162,7 @@ function buildMenuItems(role?: string): MenuProps["items"] {
         {
           key: "/electric/carbon",
           icon: <CloudOutlined />,
-          label: "Hệ số phát thải CO2",
+          label: "Phát thải CO2",
         },
         {
           key: "/electric/meter-trend",

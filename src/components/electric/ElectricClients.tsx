@@ -1689,7 +1689,7 @@ export function ElectricCatalogClient() {
             </Col>
             {/* Hệ số nhân (TU × TI) ÁP DỤNG CHO MỌI LOẠI ĐỒNG HỒ.
                 Trước đây khối này bị ẩn khi type === 2 (trung thế), khiến công tơ EVN
-                luôn giữ tu = ti = 1 -> sản lượng chỉ bằng hiệu số thô, THIẾU hệ số nhân.
+                luôn giữ tu = ti = 1 -> điện tiêu thụ chỉ bằng hiệu số thô, THIẾU hệ số nhân.
                 Công thức đúng: (chỉ số sau − chỉ số trước) × TU × TI, áp cho cả 3 khung giờ. */}
             <Col xs={24} md={8}>
               <Form.Item
@@ -1728,7 +1728,7 @@ export function ElectricCatalogClient() {
                         style={{ fontWeight: 600 }}
                       />
                       <Text type="secondary" style={{ fontSize: 12 }}>
-                        Sản lượng = (chỉ số sau − chỉ số trước) × {factor}
+                        Điện tiêu thụ = (chỉ số sau − chỉ số trước) × {factor}
                       </Text>
                     </Form.Item>
                   );
@@ -4075,7 +4075,7 @@ export function ElectricReportsClient() {
   const topFactories = (report?.byFactory || [])
     .slice(0, 8)
     .map((f) => ({ label: f.factoryName, value: f.billedCons }));
-  // Tỷ trọng nhánh tốn nhiều nhất so với sản lượng đầu nguồn EVN.
+  // Tỷ trọng nhánh tốn nhiều nhất so với điện tiêu thụ đầu nguồn EVN.
   const topConsumerShare =
     summary && summary.billedConsumption > 0 && report?.byMeter[0]
       ? (report.byMeter[0].consTotal / summary.billedConsumption) * 100
@@ -4146,7 +4146,7 @@ export function ElectricReportsClient() {
         <Col xs={24} md={12}>
           <Card>
             <Statistic
-              title="Sản lượng EVN (đầu nguồn)"
+              title="Điện tiêu thụ (đầu nguồn EVN)"
               value={summary?.billedConsumption || 0}
               precision={2}
               suffix="kWh"
@@ -4352,7 +4352,7 @@ export function ElectricReportsClient() {
               title="Nhánh hạ thế tốn điện nhất"
               value={topConsumerShare}
               precision={1}
-              suffix="% sản lượng EVN"
+              suffix="% điện tiêu thụ EVN"
               prefix={<FireOutlined style={{ color: "#fa541c" }} />}
             />
             <Text type="secondary" style={{ fontSize: 12 }}>
@@ -4379,7 +4379,7 @@ export function ElectricReportsClient() {
           columns={[
             { title: "Nhà máy", dataIndex: "factoryName" },
             {
-              title: "Sản lượng EVN",
+              title: "Điện tiêu thụ EVN",
               dataIndex: "billedCons",
               align: "right",
               render: (value: number) => fmtNumber.format(value) + " kWh",
