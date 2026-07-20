@@ -603,3 +603,14 @@ costAllocated(record) = consTotal(record) x rate(nha may)
 | Ngay | Thay doi | File chinh | Verify |
 | --- | --- | --- | --- |
 | 2026-07-18 | Doi thu tu hien thi dong ho trung the va cac tong hop theo nha may tu uu tien ma/san luong sang ten nha may/ten dong ho co numeric collation; giu nguyen `sortOrder` cho ha the. | `src/app/api/electric/daily-status/route.ts`, `src/components/electric/ElectricClients.tsx`, `src/app/api/electric/reports/route.ts`, `src/app/api/electric/carbon/route.ts`, `src/app/api/electric/power-factor/route.ts` | `npx eslint <cac file vua sua>`, `npm run build` |
+
+## 2026-07-20 - Mobile daily input hien thi tieu thu ky truoc
+
+### Current State Update
+- Trang `/mobile/daily-input` hien thi them `previousConsTotal` tu API `/api/electric/daily-status` cho dong ho ha the, gom ca card chua chot va card da chot.
+- `previousConsTotal` la san luong kWh cua ban ghi ke can truoc (`lastRecord.consTotal`), khac voi chi so ky truoc la so hien tren mat dong ho (`lastRecord.currTotal`).
+
+### Feature Ledger Update
+| Ngay | Thay doi | File chinh | Verify |
+| --- | --- | --- | --- |
+| 2026-07-20 | Bo sung hien thi so chu dien tieu thu ky truoc tren giao dien mobile daily input, dung chung `previousConsTotal` da co trong API daily-status. | `src/components/mobile/MobileDailyInputClient.tsx`, `BUSINESS_LOGIC_CONTEXT.md` | `npx eslint src/components/mobile/MobileDailyInputClient.tsx`, `npm run build` |

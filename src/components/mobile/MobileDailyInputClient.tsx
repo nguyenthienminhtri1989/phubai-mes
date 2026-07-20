@@ -88,6 +88,7 @@ type ElectricMeter = {
   transformerUnit?: TransformerUnit | null;
   todayRecord?: PowerRecord | null;
   lastRecord?: PowerRecord | null;
+  previousConsTotal?: number | null;
   avgConsumption7d?: number | null;
 };
 
@@ -586,6 +587,12 @@ export function MobileDailyInputClient() {
                           <div style={{ color: "#526174", fontSize: 12 }}>
                             Kỳ trước: {fmtNumber.format(Number(meter.lastRecord.currTotal))}
                             {" "}({dayjs(meter.lastRecord.recordDate).format("DD/MM")})
+                            {meter.previousConsTotal != null ? (
+                              <>
+                                {" "}• Tiêu thụ kỳ trước:{" "}
+                                {fmtNumber.format(Number(meter.previousConsTotal))} kWh
+                              </>
+                            ) : null}
                           </div>
                         ) : (
                           <div style={{ color: "#526174", fontSize: 12 }}>Chỉ số đầu kỳ (mốc gốc)</div>
@@ -633,6 +640,18 @@ export function MobileDailyInputClient() {
                         {meter.lastRecord ? fmtNumber.format(prev) : "---"}
                       </Text>
                     </div>
+                    {meter.previousConsTotal != null ? (
+                      <div style={{ marginTop: 6 }}>
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          Tiêu thụ kỳ trước
+                        </Text>
+                        <div>
+                          <Text strong style={{ fontSize: 16, color: "#006dcb" }}>
+                            {fmtNumber.format(Number(meter.previousConsTotal))} kWh
+                          </Text>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
 
                   {/* Input */}
