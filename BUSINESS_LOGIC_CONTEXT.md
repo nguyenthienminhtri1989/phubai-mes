@@ -614,3 +614,30 @@ costAllocated(record) = consTotal(record) x rate(nha may)
 | Ngay | Thay doi | File chinh | Verify |
 | --- | --- | --- | --- |
 | 2026-07-20 | Bo sung hien thi so chu dien tieu thu ky truoc tren giao dien mobile daily input, dung chung `previousConsTotal` da co trong API daily-status. | `src/components/mobile/MobileDailyInputClient.tsx`, `BUSINESS_LOGIC_CONTEXT.md` | `npx eslint src/components/mobile/MobileDailyInputClient.tsx`, `npm run build` |
+
+## 2026-07-22 - Cung co collector cho viec lap nhieu N520 + dual COM (502/503)
+
+### Current State Update
+
+- Chuan bi lap dat dien rong: nhieu Gateway USR-N520, moi N520 dung ca COM1 (TCP port 502) va COM2 (TCP port 503). Lap them N520 chi can khai bao them dong ho voi IP moi trong danh muc, KHONG can sua code (collector fetch danh sach dong ho tu VPS moi chu ky).
+- `scripts/energy-push-collector.js` da duoc cung co:
+  - Chong chu ky chong lap: co `cycleRunning` guard, neu chu ky truoc chua xong thi BO QUA nhip 60s hien tai (tranh mo 2 ket noi dong thoi toi cung 1 cong N520 -> nghen RS485).
+  - Them `connectWithTimeout` (mac dinh 4000ms, bien `MODBUS_CONNECT_TIMEOUT_MS`): `connectTCP` khong tu co timeout nen mot Gateway chet se treo theo SYN-timeout OS (~20s+); nay fail nhanh + huy socket.
+  - Doc cac Gateway SONG SONG co gioi han (`GATEWAY_CONCURRENCY`, mac dinh 4) qua `mapWithConcurrency`; trong CUNG mot bus RS485 van doc TUAN TU tung Slave ID. Gom theo `ip:port` nen 502 va 503 cua cung 1 N520 la 2 nhom -> 2 ket noi TCP rieng.
+  - `safeClose` dong client an toan (co fallback timeout), tranh ro handle khi chay dai ngay.
+- `scripts/energy-cron.js` (`collectTelemetry`, con dung cho `--collect-once`) cung dung `connectWithTimeout` + `safeClose`.
+- Chan trung dia chi Modbus tren cung mot bus: them `@@unique([gatewayIp, gatewayPort, modbusId])` cho `PowerMeter` (migration `20260722090000_add_meter_gateway_slave_unique`). Postgres coi NULL la distinct nen dong ho MANUAL khong bi rang buoc. API `/api/energy/meters` (dung chung cho `/api/electric/meters`) check truoc va tra 409 tieng Viet ro rang khi trung.
+- `/api/collector/ingest` ghi DB theo lo: upsert `PowerLiveReading` 1 lan/dong ho (ban moi nhat) trong `$transaction`, telemetry dung `createMany`, thay vi await tung reading -> moi POST nhanh hon khi nhieu dong ho.
+
+### Business Rules Update
+
+- Dinh tuyen Modbus: moi dong ho AUTO xac dinh boi bo ba `(gatewayIp, gatewayPort, modbusId)`. `gatewayPort` = 502 cho COM1, 503 cho COM2 cua N520. Bo ba nay phai DUY NHAT tren toan he thong dong ho AUTO.
+- Cung mot `modbusId` duoc phep xuat hien tren cac bus khac nhau (khac IP hoac khac port), vi day la cac bus RS485 vat ly doc lap.
+- Collector doc song song giua cac Gateway nhung tuan tu trong tung bus; khong duoc doc song song 2 dong ho tren cung mot `ip:port`.
+- Truoc khi ap migration unique tren production, phai kiem tra khong con trung `(gatewayIp, gatewayPort, modbusId)` (query group by ... having count>1), neu khong `CREATE UNIQUE INDEX` se that bai.
+
+### Feature Ledger Update
+
+| Ngay | Thay doi | File chinh | Verify |
+| --- | --- | --- | --- |
+| 2026-07-22 | Cung co collector cho lap nhieu N520 + dual COM (502/503): chong chu ky chong lap, connect-timeout, doc song song co gioi han, safeClose; chan trung dia chi Modbus (@@unique + check API 409); batch ghi trong ingest. | `scripts/energy-push-collector.js`, `scripts/energy-cron.js`, `prisma/schema.prisma`, `prisma/migrations/20260722090000_add_meter_gateway_slave_unique/migration.sql`, `src/app/api/energy/meters/route.ts`, `src/app/api/collector/ingest/route.ts` | `node --check scripts/energy-push-collector.js`, `node --check scripts/energy-cron.js`, `npx prisma generate`, `npx prisma migrate deploy`, `npx prisma migrate status`, `npx eslint src/app/api/energy/meters/route.ts src/app/api/collector/ingest/route.ts`, `npm run build` |

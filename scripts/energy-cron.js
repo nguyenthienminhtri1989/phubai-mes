@@ -124,6 +124,52 @@ function parseSelecFloat(buffer, offset = 0) {
   return fixedBuffer.readFloatBE(0);
 }
 
+const CONNECT_TIMEOUT_MS = Number(process.env.MODBUS_CONNECT_TIMEOUT_MS || 4000);
+
+// connectTCP khong tu co timeout -> mot Gateway chet se treo theo SYN-timeout OS (~20s+),
+// lam nghen ca chu ky khi quet nhieu Gateway. Bao bang Promise.race, huy socket khi qua han.
+function connectWithTimeout(client, ip, port, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      try {
+        client.destroy?.();
+      } catch {
+        /* bo qua */
+      }
+      reject(new Error(`connect timeout sau ${timeoutMs}ms`));
+    }, timeoutMs);
+    client
+      .connectTCP(ip, { port })
+      .then(() => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve();
+      })
+      .catch((err) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(err);
+      });
+  });
+}
+
+// Dong client an toan, khong de chu ky sau treo neu callback close khong bao gio goi.
+function safeClose(client) {
+  return new Promise((resolve) => {
+    try {
+      client.close(() => resolve());
+      setTimeout(resolve, 500);
+    } catch {
+      resolve();
+    }
+  });
+}
+
 async function getAutoMeters(requireConnection = false) {
   const connectionFilter = requireConnection
     ? 'and "modbusId" is not null and "gatewayIp" is not null'
@@ -166,7 +212,7 @@ async function collectTelemetry() {
     const client = new ModbusRTU();
 
     try {
-      await client.connectTCP(ip.trim(), { port });
+      await connectWithTimeout(client, ip.trim(), port, CONNECT_TIMEOUT_MS);
       client.setTimeout(2500);
 
       for (const meter of metersOnGateway) {
@@ -198,7 +244,7 @@ async function collectTelemetry() {
         `Loi mang: Khong the ket noi Gateway ${ip}:${port}. Bo qua ${metersOnGateway.length} dong ho. Loi: ${gatewayError.message}`,
       );
     } finally {
-      client.close();
+      await safeClose(client);
     }
   }
 

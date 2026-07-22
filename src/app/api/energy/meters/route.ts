@@ -84,13 +84,45 @@ export async function GET(request: NextRequest) {
   return NextResponse.json(data);
 }
 
+// Chan trung dia chi Modbus tren cung mot bus: hai dong ho AUTO cung
+// (gatewayIp, gatewayPort, modbusId) se dung do tren RS485. Tra loi ro thay vi P2002 tho.
+async function findGatewayConflict(
+  data: { isAuto: boolean; gatewayIp: string | null; gatewayPort: number; modbusId: number | null },
+  excludeId?: string,
+) {
+  if (!data.isAuto || !data.gatewayIp || data.modbusId == null) return null;
+  return prisma.powerMeter.findFirst({
+    where: {
+      gatewayIp: data.gatewayIp,
+      gatewayPort: data.gatewayPort,
+      modbusId: data.modbusId,
+      id: excludeId ? { not: excludeId } : undefined,
+    },
+    select: { code: true, name: true },
+  });
+}
+
+function gatewayConflictResponse(conflict: { code: string; name: string }, data: { gatewayIp: string | null; gatewayPort: number; modbusId: number | null }) {
+  return NextResponse.json(
+    {
+      error: `Trùng địa chỉ Modbus: đồng hồ "${conflict.code} - ${conflict.name}" đã dùng Slave ID ${data.modbusId} trên Gateway ${data.gatewayIp}:${data.gatewayPort}. Mỗi Slave ID phải là duy nhất trên cùng một cổng Gateway.`,
+    },
+    { status: 409 },
+  );
+}
+
 export async function POST(request: NextRequest) {
   const guard = await requireCatalogManager();
   if (!guard.ok) return guard.response;
 
   const body = await request.json();
+  const payload = await meterData(body);
+
+  const conflict = await findGatewayConflict(payload);
+  if (conflict) return gatewayConflictResponse(conflict, payload);
+
   const data = await prisma.powerMeter.create({
-    data: await meterData(body),
+    data: payload,
     include: meterInclude,
   });
 
@@ -108,9 +140,14 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: "Missing meter id" }, { status: 400 });
   }
 
+  const payload = await meterData(body);
+
+  const conflict = await findGatewayConflict(payload, id);
+  if (conflict) return gatewayConflictResponse(conflict, payload);
+
   const data = await prisma.powerMeter.update({
     where: { id },
-    data: await meterData(body),
+    data: payload,
     include: meterInclude,
   });
 

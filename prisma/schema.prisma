@@ -154,6 +154,10 @@ model PowerMeter {
   powerFactors  PowerFactorLog[]
   liveReading   PowerLiveReading?
 
+  // Hai dong ho AUTO KHONG duoc trung dia chi tren cung mot bus: cung (gatewayIp, gatewayPort,
+  // modbusId) tren RS485 se dung do -> ca hai doc ra rac/timeout. Postgres coi NULL la distinct
+  // nen dong ho MANUAL (gatewayIp/modbusId = null) khong bi rang buoc nay.
+  @@unique([gatewayIp, gatewayPort, modbusId])
   @@index([factoryId])
   @@index([groupId])
   @@index([transformerId])

@@ -86,9 +86,13 @@ export async function POST(request: NextRequest) {
   const liveTs = new Map<string, number>();
   for (const row of existingLive) liveTs.set(row.meterId, row.readAt.getTime());
 
-  let liveUpdated = 0;
-  let telemetryInserted = 0;
   let skipped = rawReadings.length - parsed.length;
+
+  // Gom truoc, ghi DB theo lo de moi POST khong bi keo dai khi nhieu dong ho:
+  //  - live: chi giu ban doc MOI NHAT cua moi dong ho (parsed da sap tang dan nen ban cuoi la moi nhat).
+  //  - telemetry: chi ban doc DAU TIEN cua moi gio tron, gom vao mang roi createMany.
+  const newestLive = new Map<string, ParsedReading>();
+  const telemetryRows: { meterId: string; totalEnergy: number; timestamp: Date }[] = [];
 
   for (const reading of parsed) {
     if (!validMeters.has(reading.meterId)) {
@@ -96,42 +100,42 @@ export async function POST(request: NextRequest) {
       continue;
     }
 
-    const readTs = reading.readAt.getTime();
+    // 1) Ban doc moi nhat cho realtime (ghi de vi parsed tang dan theo thoi gian).
+    newestLive.set(reading.meterId, reading);
 
-    // 1) Cap nhat ban doc moi nhat (chi khi moi hon ban dang luu).
-    const currentLive = liveTs.get(reading.meterId);
-    if (currentLive === undefined || readTs >= currentLive) {
-      await prisma.powerLiveReading.upsert({
-        where: { meterId: reading.meterId },
-        create: {
-          meterId: reading.meterId,
-          totalEnergy: reading.totalEnergy,
-          readAt: reading.readAt,
-        },
-        update: {
-          totalEnergy: reading.totalEnergy,
-          readAt: reading.readAt,
-        },
-      });
-      liveTs.set(reading.meterId, readTs);
-      liveUpdated += 1;
-    }
-
-    // 2) Ghi telemetry lich su: chi luu ban doc DAU TIEN cua moi gio tron.
-    const readBucket = hourBucket(readTs);
+    // 2) Telemetry lich su theo gio tron.
+    const readBucket = hourBucket(reading.readAt.getTime());
     const lastBucket = lastTelemetryBucket.get(reading.meterId);
     if (lastBucket === undefined || readBucket > lastBucket) {
-      await prisma.powerTelemetry.create({
-        data: {
-          meterId: reading.meterId,
-          totalEnergy: reading.totalEnergy,
-          timestamp: reading.readAt,
-        },
+      telemetryRows.push({
+        meterId: reading.meterId,
+        totalEnergy: reading.totalEnergy,
+        timestamp: reading.readAt,
       });
       lastTelemetryBucket.set(reading.meterId, readBucket);
-      telemetryInserted += 1;
     }
   }
 
-  return NextResponse.json({ liveUpdated, telemetryInserted, skipped });
+  // Chi upsert live khi ban moi nhat that su moi hon ban dang luu.
+  const liveUpserts = [];
+  for (const [meterId, reading] of newestLive) {
+    const currentLive = liveTs.get(meterId);
+    if (currentLive !== undefined && reading.readAt.getTime() < currentLive) continue;
+    liveUpserts.push(
+      prisma.powerLiveReading.upsert({
+        where: { meterId },
+        create: { meterId, totalEnergy: reading.totalEnergy, readAt: reading.readAt },
+        update: { totalEnergy: reading.totalEnergy, readAt: reading.readAt },
+      }),
+    );
+  }
+
+  if (liveUpserts.length > 0) await prisma.$transaction(liveUpserts);
+  if (telemetryRows.length > 0) await prisma.powerTelemetry.createMany({ data: telemetryRows });
+
+  return NextResponse.json({
+    liveUpdated: liveUpserts.length,
+    telemetryInserted: telemetryRows.length,
+    skipped,
+  });
 }
