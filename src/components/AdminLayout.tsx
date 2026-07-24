@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  ApiOutlined,
   BarChartOutlined,
   BulbOutlined,
   CloudOutlined,
@@ -110,6 +111,10 @@ const pageTitle: Record<string, { label: string; icon: ReactNode }> = {
     icon: <BulbOutlined />,
   },
   "/electric/prices": { label: "Đơn giá điện", icon: <DollarOutlined /> },
+  "/electric/gateways": {
+    label: "Tình trạng Gateway",
+    icon: <ApiOutlined />,
+  },
   "/electric/catalog": {
     label: "Danh mục điện năng",
     icon: <DatabaseOutlined />,
@@ -195,6 +200,11 @@ function buildMenuItems(role?: string): MenuProps["items"] {
           key: "/electric/prices",
           icon: <DollarOutlined />,
           label: "Đơn giá điện",
+        },
+        {
+          key: "/electric/gateways",
+          icon: <ApiOutlined />,
+          label: "Tình trạng Gateway",
         },
         {
           key: "/electric/catalog",

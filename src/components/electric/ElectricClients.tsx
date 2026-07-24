@@ -153,6 +153,7 @@ type ElectricMeter = {
   type: number; // 1: Hạ thế, 2: Trung thế
   isAuto: boolean;
   modbusId?: number | null;
+  gatewayId?: string | null;
   gatewayIp?: string | null;
   gatewayPort: number;
   registerAddr: number;
@@ -162,6 +163,7 @@ type ElectricMeter = {
   isNonProduction?: boolean;
   note?: string | null;
   factory?: Factory | null;
+  gateway?: Gateway | null;
   group?: MeterGroup | null;
   transformer?: Transformer | null;
   transformerUnit?: TransformerUnit | null;
@@ -169,6 +171,68 @@ type ElectricMeter = {
   lastRecord?: PowerRecord | null;
   previousConsTotal?: number | null;
   avgConsumption7d?: number | null;
+};
+
+// Mỗi Gateway = một bus RS485 = một cổng COM. N520 hai cổng khai 2 dòng cùng IP, khác port.
+type Gateway = {
+  id: string;
+  code: string;
+  name: string;
+  ipAddress: string;
+  port: number;
+  factoryId?: string | null;
+  location?: string | null;
+  description?: string | null;
+  isActive: boolean;
+  factory?: Factory | null;
+  _count?: { meters: number };
+};
+
+type GatewayHealthRow = {
+  id: string;
+  code: string;
+  name: string;
+  ipAddress: string;
+  port: number;
+  location?: string | null;
+  factoryName?: string | null;
+  meterCount: number;
+  status: "ONLINE" | "DEGRADED" | "OFFLINE" | "UNKNOWN";
+  connected: boolean | null;
+  lastOkAt: string | null;
+  lastErrorAt: string | null;
+  lastError: string | null;
+  consecutiveFailures: number;
+  meterTotal: number;
+  meterOk: number;
+  meterFailed: number;
+  reportedAt: string | null;
+  reportedSecondsAgo: number | null;
+};
+
+type GatewayHealthResponse = {
+  checkedAt: string;
+  staleThresholdSec: number;
+  collector: {
+    online: boolean;
+    lastSeenAt: string | null;
+    secondsAgo: number | null;
+    intervalSec: number;
+    gatewayTotal: number;
+    gatewayOnline: number;
+    meterTotal: number;
+    meterOk: number;
+    meterFailed: number;
+    bufferedCount: number;
+  };
+  gateways: GatewayHealthRow[];
+  summary: {
+    total: number;
+    online: number;
+    degraded: number;
+    offline: number;
+    unknown: number;
+  };
 };
 
 type ElectricityPrice = {
@@ -438,6 +502,10 @@ export function ElectricCatalogClient() {
   const [meters, setMeters] = useState<ElectricMeter[]>([]);
   const [groups, setGroups] = useState<MeterGroup[]>([]);
   const [energyTypes, setEnergyTypes] = useState<EnergyType[]>([]);
+  const [gateways, setGateways] = useState<Gateway[]>([]);
+  const [gatewayModalOpen, setGatewayModalOpen] = useState(false);
+  const [editingGateway, setEditingGateway] = useState<Gateway | null>(null);
+  const [formGateway] = Form.useForm();
   const [factoryModalOpen, setFactoryModalOpen] = useState(false);
   const [transformerModalOpen, setTransformerModalOpen] = useState(false);
   const [transformerUnitModalOpen, setTransformerUnitModalOpen] =
@@ -477,6 +545,7 @@ export function ElectricCatalogClient() {
         nextMeters,
         nextGroups,
         nextEnergyTypes,
+        nextGateways,
       ] = await Promise.all([
         fetchJson<Factory[]>("/api/electric/factories"),
         fetchJson<Transformer[]>("/api/electric/substations"),
@@ -484,6 +553,7 @@ export function ElectricCatalogClient() {
         fetchJson<ElectricMeter[]>("/api/electric/meters"),
         fetchJson<MeterGroup[]>("/api/electric/meter-groups"),
         fetchJson<EnergyType[]>("/api/electric/energy-types"),
+        fetchJson<Gateway[]>("/api/electric/gateways?includeInactive=1"),
       ]);
       setFactories(nextFactories);
       setTransformers(nextTransformers);
@@ -491,6 +561,7 @@ export function ElectricCatalogClient() {
       setMeters(nextMeters);
       setGroups(nextGroups);
       setEnergyTypes(nextEnergyTypes);
+      setGateways(nextGateways);
     } catch (error) {
       message.error(
         error instanceof Error
@@ -554,6 +625,30 @@ export function ElectricCatalogClient() {
           },
     );
     setMeterModalOpen(true);
+  };
+
+  const openGateway = (record?: Gateway) => {
+    setEditingGateway(record || null);
+    formGateway.resetFields();
+    formGateway.setFieldsValue(
+      record
+        ? { ...record, factoryId: record.factoryId || record.factory?.id }
+        : { isActive: true, port: 502 },
+    );
+    setGatewayModalOpen(true);
+  };
+
+  const saveGateway = async (values: Record<string, unknown>) => {
+    await fetchJson<Gateway>(
+      "/api/electric/gateways",
+      postBody(editingGateway ? "PUT" : "POST", {
+        ...values,
+        id: editingGateway?.id,
+      }),
+    );
+    message.success("Đã lưu Gateway");
+    setGatewayModalOpen(false);
+    await load();
   };
 
   const openGroup = (record?: MeterGroup) => {
@@ -1215,6 +1310,109 @@ export function ElectricCatalogClient() {
               ),
             },
             {
+              key: "gateways",
+              label: "Gateway Modbus",
+              children: (
+                <Space direction="vertical" size={12} style={{ width: "100%" }}>
+                  <Alert
+                    type="info"
+                    showIcon
+                    message="Mỗi dòng là một cổng COM (một bus RS485), không phải một thiết bị"
+                    description="Bộ N520 hai cổng phải khai 2 dòng cùng địa chỉ IP, khác port: COM1 dùng port 502, COM2 dùng port 503. Hai bus có thể hỏng độc lập nên được giám sát riêng."
+                  />
+                  {canManageCatalog && (
+                    <Button
+                      type="primary"
+                      icon={<PlusOutlined />}
+                      onClick={() => openGateway()}
+                    >
+                      Thêm Gateway
+                    </Button>
+                  )}
+                  <Table
+                    rowKey="id"
+                    loading={loading}
+                    dataSource={gateways}
+                    columns={[
+                      {
+                        title: "Mã",
+                        dataIndex: "code",
+                        render: (value: string) => <b>{value}</b>,
+                      },
+                      { title: "Tên Gateway", dataIndex: "name" },
+                      {
+                        title: "Địa chỉ",
+                        render: (_: unknown, record: Gateway) => (
+                          <Space direction="vertical" size={0}>
+                            <span>
+                              {record.ipAddress}:{record.port}
+                            </span>
+                            <Tag color={record.port === 502 ? "blue" : "purple"}>
+                              {record.port === 502
+                                ? "COM1"
+                                : record.port === 503
+                                  ? "COM2"
+                                  : `Port ${record.port}`}
+                            </Tag>
+                          </Space>
+                        ),
+                      },
+                      {
+                        title: "Nhà máy",
+                        render: (_: unknown, record: Gateway) =>
+                          record.factory?.name || "-",
+                      },
+                      { title: "Vị trí", dataIndex: "location" },
+                      {
+                        title: "Số đồng hồ",
+                        width: 110,
+                        render: (_: unknown, record: Gateway) =>
+                          record._count?.meters ?? 0,
+                      },
+                      {
+                        title: "Trạng thái",
+                        width: 120,
+                        render: (_: unknown, record: Gateway) =>
+                          record.isActive ? (
+                            <Tag color="green">Đang dùng</Tag>
+                          ) : (
+                            <Tag>Ngưng dùng</Tag>
+                          ),
+                      },
+                      {
+                        title: "Thao tác",
+                        render: (_: unknown, record: Gateway) =>
+                          canManageCatalog ? (
+                            <Space>
+                              <Button
+                                size="small"
+                                icon={<EditOutlined />}
+                                onClick={() => openGateway(record)}
+                              />
+                              <Popconfirm
+                                title="Xóa hoặc ngưng dùng Gateway này?"
+                                onConfirm={() =>
+                                  deleteRecord(
+                                    "/api/electric/gateways",
+                                    record.id,
+                                  )
+                                }
+                              >
+                                <Button
+                                  size="small"
+                                  danger
+                                  icon={<DeleteOutlined />}
+                                />
+                              </Popconfirm>
+                            </Space>
+                          ) : null,
+                      },
+                    ]}
+                  />
+                </Space>
+              ),
+            },
+            {
               key: "groups",
               label: "Nhóm đồng hồ",
               children: (
@@ -1513,6 +1711,73 @@ export function ElectricCatalogClient() {
         </Form>
       </Modal>
       <Modal
+        title={editingGateway ? "Sửa Gateway" : "Thêm Gateway"}
+        width={720}
+        open={gatewayModalOpen}
+        onCancel={() => setGatewayModalOpen(false)}
+        onOk={() => formGateway.submit()}
+      >
+        <Form form={formGateway} layout="vertical" onFinish={saveGateway}>
+          <Alert
+            type="warning"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message="Mỗi cổng COM khai một dòng riêng"
+            description="COM1 → port 502, COM2 → port 503. Cùng một bộ N520 thì hai dòng dùng chung địa chỉ IP."
+          />
+          <Row gutter={12}>
+            <Col xs={24} md={12}>
+              <Form.Item name="code" label="Mã Gateway" rules={[{ required: true }]}>
+                <Input placeholder="GW-XUONG-A-COM1" />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item name="name" label="Tên Gateway" rules={[{ required: true }]}>
+                <Input placeholder="N520 xưởng A - COM1" />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={14}>
+              <Form.Item
+                name="ipAddress"
+                label="Địa chỉ IP (LAN)"
+                rules={[{ required: true }]}
+              >
+                <Input placeholder="192.168.1.231" />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={10}>
+              <Form.Item name="port" label="Port" rules={[{ required: true }]}>
+                <Select
+                  options={[
+                    { label: "502 (COM1)", value: 502 },
+                    { label: "503 (COM2)", value: 503 },
+                  ]}
+                />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Form.Item name="factoryId" label="Nhà máy">
+            <Select
+              allowClear
+              placeholder="Chọn nhà máy"
+              options={factories.map((item) => ({
+                label: item.name,
+                value: item.id,
+              }))}
+            />
+          </Form.Item>
+          <Form.Item name="location" label="Vị trí lắp đặt">
+            <Input placeholder="Tủ điện xưởng A" />
+          </Form.Item>
+          <Form.Item name="description" label="Ghi chú">
+            <Input.TextArea rows={2} />
+          </Form.Item>
+          <Form.Item name="isActive" label="Đang dùng" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+        </Form>
+      </Modal>
+      <Modal
         title={editingGroup ? "Sửa nhóm đồng hồ" : "Thêm nhóm đồng hồ"}
         open={groupModalOpen}
         onCancel={() => setGroupModalOpen(false)}
@@ -1766,22 +2031,24 @@ export function ElectricCatalogClient() {
                     {({ getFieldValue: gfv }) =>
                       gfv("isAuto") ? (
                         <Row gutter={12}>
-                          <Col xs={24} md={10}>
+                          <Col xs={24} md={17}>
                             <Form.Item
-                              name="gatewayIp"
-                              label="Gateway IP"
+                              name="gatewayId"
+                              label="Gateway (cổng COM)"
                               rules={[{ required: true }]}
+                              extra="Địa chỉ IP/port lấy tự động từ danh mục Gateway. Thêm Gateway mới ở tab Gateway Modbus."
                             >
-                              <Input placeholder="192.168.1.253" />
-                            </Form.Item>
-                          </Col>
-                          <Col xs={24} md={7}>
-                            <Form.Item
-                              name="gatewayPort"
-                              label="Gateway Port"
-                              rules={[{ required: true }]}
-                            >
-                              <InputNumber min={1} style={{ width: "100%" }} />
+                              <Select
+                                placeholder="Chọn Gateway"
+                                showSearch
+                                optionFilterProp="label"
+                                options={gateways
+                                  .filter((gw) => gw.isActive)
+                                  .map((gw) => ({
+                                    label: `${gw.name} — ${gw.ipAddress}:${gw.port} (${gw.port === 502 ? "COM1" : gw.port === 503 ? "COM2" : `Port ${gw.port}`})`,
+                                    value: gw.id,
+                                  }))}
+                              />
                             </Form.Item>
                           </Col>
                           <Col xs={24} md={7}>
@@ -1789,6 +2056,7 @@ export function ElectricCatalogClient() {
                               name="modbusId"
                               label="Slave ID"
                               rules={[{ required: true }]}
+                              extra="Duy nhất trong cùng một cổng COM"
                             >
                               <InputNumber
                                 min={1}
@@ -4615,5 +4883,245 @@ export function ElectricOverviewClient() {
         />
       </Card>
     </>
+  );
+}
+
+const GATEWAY_STATUS_META: Record<
+  GatewayHealthRow["status"],
+  { color: string; label: string }
+> = {
+  ONLINE: { color: "green", label: "Bình thường" },
+  DEGRADED: { color: "orange", label: "Có đồng hồ lỗi" },
+  OFFLINE: { color: "red", label: "Mất kết nối" },
+  UNKNOWN: { color: "default", label: "Không xác định" },
+};
+
+function formatAgo(seconds: number | null) {
+  if (seconds === null) return "chưa có dữ liệu";
+  if (seconds < 60) return `${seconds} giây trước`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} phút trước`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} giờ trước`;
+  return `${Math.floor(hours / 24)} ngày trước`;
+}
+
+export function ElectricGatewayHealthClient() {
+  const [data, setData] = useState<GatewayHealthResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      setData(
+        await fetchJson<GatewayHealthResponse>("/api/electric/gateway-health"),
+      );
+    } catch (error) {
+      message.error(
+        error instanceof Error
+          ? error.message
+          : "Không tải được trạng thái Gateway",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Màn giám sát nên tự làm mới, tránh người dùng nhìn số liệu cũ mà tưởng đang bình thường.
+  useEffect(() => {
+    const first = window.setTimeout(() => void load(), 0);
+    const timer = window.setInterval(() => void load(), 30_000);
+    return () => {
+      window.clearTimeout(first);
+      window.clearInterval(timer);
+    };
+  }, [load]);
+
+  const collector = data?.collector;
+  const summary = data?.summary;
+  const collectorOffline = !!data && !collector?.online;
+
+  return (
+    <Space direction="vertical" size={16} style={{ width: "100%" }}>
+      <Card
+        title="Tình trạng thu thập dữ liệu"
+        extra={
+          <Button icon={<ReloadOutlined />} onClick={() => void load()} loading={loading}>
+            Làm mới
+          </Button>
+        }
+      >
+        {collectorOffline ? (
+          <Alert
+            type="error"
+            showIcon
+            message="Collector mất kết nối — không có dữ liệu nào đang về"
+            description={`Lần cuối nhận tin: ${formatAgo(collector?.secondsAgo ?? null)}. Nguyên nhân thường gặp: mini PC tắt, tiến trình collector chết, hoặc nhà máy mất internet. Khi collector mất tín hiệu, hệ thống KHÔNG thể kết luận từng Gateway sống hay chết nên tất cả hiển thị "Không xác định".`}
+          />
+        ) : summary && summary.offline > 0 ? (
+          <Alert
+            type="error"
+            showIcon
+            message={`${summary.offline} Gateway đang mất kết nối`}
+            description="Kiểm tra nguồn điện, dây mạng và đèn tín hiệu của bộ N520 tương ứng ở bảng bên dưới."
+          />
+        ) : summary && summary.degraded > 0 ? (
+          <Alert
+            type="warning"
+            showIcon
+            message={`${summary.degraded} Gateway có đồng hồ không phản hồi`}
+            description="Gateway vẫn kết nối được nhưng một số đồng hồ không trả lời (mất nguồn, đứt RS485, hoặc sai Slave ID)."
+          />
+        ) : (
+          <Alert
+            type="success"
+            showIcon
+            message="Toàn bộ Gateway đang hoạt động bình thường"
+          />
+        )}
+
+        <Row gutter={16} style={{ marginTop: 16 }}>
+          <Col xs={12} md={6}>
+            <Statistic
+              title="Collector"
+              value={collector?.online ? "Đang chạy" : "Mất kết nối"}
+              valueStyle={{ color: collector?.online ? "#389e0d" : "#cf1322" }}
+            />
+            <Typography.Text type="secondary">
+              Nhận tin {formatAgo(collector?.secondsAgo ?? null)}
+            </Typography.Text>
+          </Col>
+          <Col xs={12} md={6}>
+            <Statistic
+              title="Gateway bình thường"
+              value={summary ? `${summary.online}/${summary.total}` : "-"}
+            />
+          </Col>
+          <Col xs={12} md={6}>
+            <Statistic
+              title="Đồng hồ đọc được"
+              value={
+                collector ? `${collector.meterOk}/${collector.meterTotal}` : "-"
+              }
+              valueStyle={{
+                color: collector && collector.meterFailed > 0 ? "#d46b08" : undefined,
+              }}
+            />
+          </Col>
+          <Col xs={12} md={6}>
+            <Statistic
+              title="Bản ghi tồn buffer"
+              value={collector?.bufferedCount ?? 0}
+              valueStyle={{
+                color: (collector?.bufferedCount ?? 0) > 0 ? "#d46b08" : undefined,
+              }}
+            />
+            <Typography.Text type="secondary">
+              Chờ gửi lên khi có mạng
+            </Typography.Text>
+          </Col>
+        </Row>
+      </Card>
+
+      <Card title="Trạng thái từng Gateway (mỗi dòng là một cổng COM)">
+        <Table
+          rowKey="id"
+          loading={loading}
+          dataSource={data?.gateways || []}
+          pagination={false}
+          columns={[
+            {
+              title: "Gateway",
+              render: (_: unknown, record: GatewayHealthRow) => (
+                <Space direction="vertical" size={0}>
+                  <b>{record.name}</b>
+                  <Typography.Text type="secondary">{record.code}</Typography.Text>
+                </Space>
+              ),
+            },
+            {
+              title: "Địa chỉ",
+              render: (_: unknown, record: GatewayHealthRow) => (
+                <Space direction="vertical" size={0}>
+                  <span>
+                    {record.ipAddress}:{record.port}
+                  </span>
+                  <Tag color={record.port === 502 ? "blue" : "purple"}>
+                    {record.port === 502
+                      ? "COM1"
+                      : record.port === 503
+                        ? "COM2"
+                        : `Port ${record.port}`}
+                  </Tag>
+                </Space>
+              ),
+            },
+            {
+              title: "Vị trí",
+              render: (_: unknown, record: GatewayHealthRow) =>
+                [record.factoryName, record.location].filter(Boolean).join(" — ") || "-",
+            },
+            {
+              title: "Trạng thái",
+              width: 150,
+              render: (_: unknown, record: GatewayHealthRow) => {
+                const meta = GATEWAY_STATUS_META[record.status];
+                return (
+                  <Space direction="vertical" size={0}>
+                    <Tag color={meta.color}>{meta.label}</Tag>
+                    {record.consecutiveFailures > 1 && (
+                      <Typography.Text type="danger" style={{ fontSize: 12 }}>
+                        Hỏng {record.consecutiveFailures} chu kỳ liên tiếp
+                      </Typography.Text>
+                    )}
+                  </Space>
+                );
+              },
+            },
+            {
+              title: "Đồng hồ",
+              width: 130,
+              render: (_: unknown, record: GatewayHealthRow) => (
+                <Space direction="vertical" size={0}>
+                  <span>
+                    {record.meterOk}/{record.meterTotal || record.meterCount} đọc được
+                  </span>
+                  {record.meterFailed > 0 && (
+                    <Typography.Text type="danger" style={{ fontSize: 12 }}>
+                      {record.meterFailed} lỗi
+                    </Typography.Text>
+                  )}
+                </Space>
+              ),
+            },
+            {
+              title: "Báo cáo lần cuối",
+              width: 150,
+              render: (_: unknown, record: GatewayHealthRow) =>
+                formatAgo(record.reportedSecondsAgo),
+            },
+            {
+              title: "Kết nối OK lần cuối",
+              width: 170,
+              render: (_: unknown, record: GatewayHealthRow) =>
+                record.lastOkAt
+                  ? dayjs(record.lastOkAt).format("DD/MM/YYYY HH:mm:ss")
+                  : "chưa từng",
+            },
+            {
+              title: "Lỗi gần nhất",
+              render: (_: unknown, record: GatewayHealthRow) =>
+                record.lastError ? (
+                  <Typography.Text type="danger" style={{ fontSize: 12 }}>
+                    {record.lastError}
+                  </Typography.Text>
+                ) : (
+                  "-"
+                ),
+            },
+          ]}
+        />
+      </Card>
+    </Space>
   );
 }

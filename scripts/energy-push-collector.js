@@ -148,9 +148,23 @@ async function readAllMeters(meters) {
       const client = new ModbusRTU();
       const readings = [];
 
+      // Bao cao suc khoe cua CHINH bus nay, gui kem len VPS de phan biet
+      // "gateway chet" (connected=false) voi "gateway song nhung vai dong ho khong tra loi".
+      const health = {
+        ipAddress: ip.trim(),
+        port,
+        connected: false,
+        error: null,
+        meterTotal: metersOnGateway.length,
+        meterOk: 0,
+        meterFailed: 0,
+        at: new Date().toISOString(),
+      };
+
       try {
         await connectWithTimeout(client, ip.trim(), port, CONNECT_TIMEOUT_MS);
         client.setTimeout(MODBUS_TIMEOUT_MS);
+        health.connected = true;
 
         for (const meter of metersOnGateway) {
           try {
@@ -162,23 +176,32 @@ async function readAllMeters(meters) {
               totalEnergy,
               readAt: new Date().toISOString(),
             });
+            health.meterOk += 1;
             console.log(`  + [${ip}:${port}] ${meter.code || meter.id} (ID ${meter.modbusId}): ${totalEnergy} kWh`);
             await new Promise((r) => setTimeout(r, 50));
           } catch (err) {
+            health.meterFailed += 1;
+            health.error = `${meter.code || meter.id} (ID ${meter.modbusId}): ${err.message}`;
             console.error(`  - [${ip}:${port}] Loi doc ${meter.code || meter.id} (ID ${meter.modbusId}): ${err.message}`);
           }
         }
       } catch (err) {
+        health.connected = false;
+        health.error = err.message;
+        health.meterFailed = metersOnGateway.length;
         console.error(`Loi ket noi Gateway ${ip}:${port} (bo qua ${metersOnGateway.length} dong ho): ${err.message}`);
       } finally {
         await safeClose(client);
       }
 
-      return readings;
+      return { readings, health };
     },
   );
 
-  return perGateway.flat();
+  return {
+    readings: perGateway.flatMap((g) => g.readings),
+    gateways: perGateway.map((g) => g.health),
+  };
 }
 
 // Đọc các reading còn tồn trong buffer (do lần trước gửi lỗi).
@@ -205,13 +228,14 @@ function clearBuffer() {
   }
 }
 
-// Đẩy readings lên VPS. Trả về true nếu thành công.
-async function pushReadings(readings) {
-  if (readings.length === 0) return true;
+// Đẩy readings + báo cáo sức khỏe lên VPS.
+// LUÔN gửi kể cả khi readings rỗng: đúng lúc không đọc được đồng hồ nào mới là lúc
+// phía VPS cần biết nhất (gateway chết). Đây cũng là nhịp tim chứng minh collector còn sống.
+async function pushPayload(readings, gateways, collector) {
   const res = await fetch(`${API_BASE}/api/collector/ingest`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-api-key": API_KEY },
-    body: JSON.stringify({ readings }),
+    body: JSON.stringify({ readings, gateways, collector }),
   });
   if (!res.ok) {
     throw new Error(`POST /api/collector/ingest loi ${res.status}: ${await res.text()}`);
@@ -223,27 +247,40 @@ async function runCycle() {
   console.log(`\n[${nowVN()}] Bat dau chu ky thu thap...`);
   try {
     const meters = await fetchMeters();
-    if (meters.length === 0) {
-      console.log("Khong co dong ho AUTO nao. Bo qua chu ky.");
-      return;
-    }
 
-    const fresh = await readAllMeters(meters);
+    // Kể cả khi chưa khai đồng hồ nào, vẫn gửi nhịp tim để VPS biết collector còn sống.
+    const { readings: fresh, gateways } =
+      meters.length === 0 ? { readings: [], gateways: [] } : await readAllMeters(meters);
+
+    if (meters.length === 0) console.log("Chua khai bao dong ho AUTO nao.");
+
     const buffered = loadBuffer();
     const all = [...buffered, ...fresh];
 
-    if (all.length === 0) {
-      console.log("Khong doc duoc dong ho nao trong chu ky nay.");
-      return;
-    }
+    const collector = {
+      at: new Date().toISOString(),
+      intervalSec: Math.round(INTERVAL_MS / 1000),
+      gatewayTotal: gateways.length,
+      gatewayOnline: gateways.filter((g) => g.connected).length,
+      meterTotal: gateways.reduce((s, g) => s + g.meterTotal, 0),
+      meterOk: gateways.reduce((s, g) => s + g.meterOk, 0),
+      meterFailed: gateways.reduce((s, g) => s + g.meterFailed, 0),
+      bufferedCount: buffered.length,
+    };
 
     try {
-      await pushReadings(all);
+      await pushPayload(all, gateways, collector);
       clearBuffer(); // gửi thành công -> xóa buffer cũ
-      console.log(`Da day ${all.length} ban ghi len VPS${buffered.length ? ` (gom ${buffered.length} ban ghi ton dong)` : ""}.`);
+      const gwInfo = `${collector.gatewayOnline}/${collector.gatewayTotal} gateway OK, ${collector.meterOk}/${collector.meterTotal} dong ho OK`;
+      console.log(
+        all.length > 0
+          ? `Da day ${all.length} ban ghi len VPS (${gwInfo})${buffered.length ? ` (gom ${buffered.length} ban ghi ton dong)` : ""}.`
+          : `Khong doc duoc dong ho nao, da bao trang thai len VPS (${gwInfo}).`,
+      );
     } catch (pushErr) {
-      // Gửi lỗi (thường do mất mạng) -> chỉ lưu phần MỚI vào buffer (phần cũ đã có sẵn trong file)
-      saveToBuffer(fresh);
+      // Gửi lỗi (thường do mất mạng) -> chỉ lưu phần MỚI vào buffer (phần cũ đã có sẵn trong file).
+      // KHÔNG buffer báo cáo sức khỏe: trạng thái cũ gửi trễ là vô nghĩa, chỉ gây hiểu nhầm.
+      if (fresh.length > 0) saveToBuffer(fresh);
       console.error(`Day len VPS that bai, da luu tam ${fresh.length} ban ghi vao buffer. Loi: ${pushErr.message}`);
     }
   } catch (err) {

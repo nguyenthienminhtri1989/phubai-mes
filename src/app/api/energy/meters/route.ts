@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 
 const meterInclude = {
   factory: true,
+  gateway: true,
   group: true,
   transformer: {
     include: {
@@ -40,6 +41,22 @@ async function meterData(body: Record<string, unknown>) {
   const isAuto = body.isAuto === true;
   const meterType = Number(body.type || 1);
 
+  // Gateway trong danh muc la nguon su that ve dia chi. Khi dong ho duoc gan vao mot Gateway,
+  // `gatewayIp`/`gatewayPort` duoc DONG BO tu Gateway do (khong tin gia tri UI gui len), giu
+  // hai cot nay dung de `/api/collector/meters` va collector khong phai doi contract.
+  // Van chap nhan nhap tay IP/port cho du lieu cu chua gan Gateway.
+  const gatewayId = isAuto ? toNullableString(body.gatewayId) : null;
+  const gateway = gatewayId
+    ? await prisma.gateway.findUnique({ where: { id: gatewayId }, select: { ipAddress: true, port: true } })
+    : null;
+
+  const gatewayIp = gateway
+    ? gateway.ipAddress
+    : isAuto && body.gatewayIp
+      ? String(body.gatewayIp).trim()
+      : null;
+  const gatewayPort = gateway ? gateway.port : Number(body.gatewayPort || 502);
+
   return {
     code: String(body.code || "").trim(),
     name: String(body.name || "").trim(),
@@ -52,8 +69,9 @@ async function meterData(body: Record<string, unknown>) {
     type: Number(body.type || 1),
     isAuto,
     modbusId: isAuto && body.modbusId ? Number(body.modbusId) : null,
-    gatewayIp: isAuto && body.gatewayIp ? String(body.gatewayIp).trim() : null,
-    gatewayPort: Number(body.gatewayPort || 502),
+    gatewayId,
+    gatewayIp,
+    gatewayPort,
     registerAddr: Number(body.registerAddr || 0),
     tu: Number(body.tu || 1),
     ti: Number(body.ti || 1),

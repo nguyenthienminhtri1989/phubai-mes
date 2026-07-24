@@ -49,6 +49,7 @@ model Factory {
   updatedAt    DateTime           @updatedAt
   transformers PowerTransformer[]
   meters        PowerMeter[]
+  gateways      Gateway[]
   userScopes    UserFactoryScope[]
 
   @@index([isActive])
@@ -132,6 +133,10 @@ model PowerMeter {
   type          Int               @default(1) // 1: Hạ thế (1 chỉ số), 2: Trung thế (3 chỉ số Bình thường/Cao điểm/Thấp điểm)
   isAuto        Boolean           @default(false)
   modbusId      Int?
+  // gatewayId tro toi danh muc Gateway (nguon su that ve IP/port). `gatewayIp`/`gatewayPort`
+  // duoc server DONG BO xuong tu Gateway moi khi luu, giu nguyen de collector va
+  // /api/collector/meters khong phai doi contract.
+  gatewayId     String?
   gatewayIp     String?
   gatewayPort   Int               @default(502)
   registerAddr  Int               @default(0)
@@ -146,6 +151,7 @@ model PowerMeter {
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
   factory       Factory?              @relation(fields: [factoryId], references: [id], onDelete: SetNull)
+  gateway       Gateway?          @relation(fields: [gatewayId], references: [id], onDelete: SetNull)
   group         PowerMeterGroup?  @relation(fields: [groupId], references: [id], onDelete: SetNull)
   transformer     PowerTransformer?     @relation(fields: [transformerId], references: [id], onDelete: SetNull)
   transformerUnit PowerTransformerUnit? @relation(fields: [transformerUnitId], references: [id], onDelete: SetNull)
@@ -159,11 +165,76 @@ model PowerMeter {
   // nen dong ho MANUAL (gatewayIp/modbusId = null) khong bi rang buoc nay.
   @@unique([gatewayIp, gatewayPort, modbusId])
   @@index([factoryId])
+  @@index([gatewayId])
   @@index([groupId])
   @@index([transformerId])
   @@index([transformerUnitId])
   @@index([sortOrder])
   @@index([isActive, isAuto])
+}
+
+// Danh muc Gateway Modbus (USR-N520...).
+// MOI DONG = MOT BUS RS485 = MOT CONG COM cua thiet bi, khong phai mot thiet bi vat ly.
+// N520 hai cong -> 2 dong Gateway CUNG `ipAddress`, khac `port` (COM1=502, COM2=503),
+// vi moi cong la mot duong RS485 doc lap va co the hong doc lap nhau.
+model Gateway {
+  id          String         @id @default(cuid())
+  code        String         @unique
+  name        String
+  ipAddress   String
+  port        Int            @default(502)
+  factoryId   String?
+  location    String?
+  description String?
+  isActive    Boolean        @default(true)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  factory     Factory?       @relation(fields: [factoryId], references: [id], onDelete: SetNull)
+  meters      PowerMeter[]
+  health      GatewayHealth?
+
+  @@unique([ipAddress, port])
+  @@index([factoryId])
+  @@index([isActive])
+}
+
+// Bao cao suc khoe THO cua tung bus gateway, do collector day len moi chu ky.
+//
+// LUU Y QUAN TRONG: KHONG luu cot "status" da chot o day. Trang thai ONLINE/OFFLINE hien cho
+// nguoi dung phai duoc SUY RA luc truy van bang cach so `reportedAt` voi thoi diem hien tai.
+// Ly do: khi collector chet hoac nha may mat internet thi khong con ai gui bao cao nua, nen
+// cot status cu se ket cung o gia tri ONLINE va noi doi. Su VANG MAT cua bao cao moi la tin hieu.
+model GatewayHealth {
+  gatewayId           String    @id
+  connected           Boolean   @default(false)
+  lastOkAt            DateTime? @db.Timestamptz
+  lastErrorAt         DateTime? @db.Timestamptz
+  lastError           String?
+  consecutiveFailures Int       @default(0)
+  meterTotal          Int       @default(0)
+  meterOk             Int       @default(0)
+  meterFailed         Int       @default(0)
+  reportedAt          DateTime  @db.Timestamptz
+  updatedAt           DateTime  @updatedAt
+  gateway             Gateway   @relation(fields: [gatewayId], references: [id], onDelete: Cascade)
+
+  @@index([reportedAt])
+}
+
+// Nhip tim cua collector phia nha may. Chi co DUY NHAT mot dong (id = "default").
+// Dung de phat hien su co ma collector KHONG the tu bao: mini PC tat, PM2 chet, mat internet.
+// Khi do khong con ban tin nao len VPS -> chi phat hien duoc bang su vang mat cua heartbeat.
+model CollectorHeartbeat {
+  id            String   @id @default("default")
+  lastSeenAt    DateTime @db.Timestamptz
+  gatewayTotal  Int      @default(0)
+  gatewayOnline Int      @default(0)
+  meterTotal    Int      @default(0)
+  meterOk       Int      @default(0)
+  meterFailed   Int      @default(0)
+  bufferedCount Int      @default(0)
+  intervalSec   Int?
+  updatedAt     DateTime @updatedAt
 }
 
 // Ban doc MOI NHAT cua moi dong ho AUTO, do collector push len (co che PUSH qua HTTPS).

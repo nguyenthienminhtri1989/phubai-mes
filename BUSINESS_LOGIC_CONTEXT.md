@@ -641,3 +641,29 @@ costAllocated(record) = consTotal(record) x rate(nha may)
 | Ngay | Thay doi | File chinh | Verify |
 | --- | --- | --- | --- |
 | 2026-07-22 | Cung co collector cho lap nhieu N520 + dual COM (502/503): chong chu ky chong lap, connect-timeout, doc song song co gioi han, safeClose; chan trung dia chi Modbus (@@unique + check API 409); batch ghi trong ingest. | `scripts/energy-push-collector.js`, `scripts/energy-cron.js`, `prisma/schema.prisma`, `prisma/migrations/20260722090000_add_meter_gateway_slave_unique/migration.sql`, `src/app/api/energy/meters/route.ts`, `src/app/api/collector/ingest/route.ts` | `node --check scripts/energy-push-collector.js`, `node --check scripts/energy-cron.js`, `npx prisma generate`, `npx prisma migrate deploy`, `npx prisma migrate status`, `npx eslint src/app/api/energy/meters/route.ts src/app/api/collector/ingest/route.ts`, `npm run build` |
+
+## 2026-07-23 - Giam sat suc khoe Gateway + danh muc Gateway + nhip tim collector
+
+### Current State Update
+
+- Them **danh muc Gateway** (`model Gateway`): MOI DONG = MOT BUS RS485 = MOT CONG COM, khong phai mot thiet bi vat ly. N520 hai cong khai 2 dong CUNG `ipAddress`, khac `port` (COM1=502, COM2=503). Unique `(ipAddress, port)`. `PowerMeter.gatewayId` tro toi Gateway; `gatewayIp`/`gatewayPort` van giu va duoc server DONG BO tu Gateway khi luu dong ho (nguon su that la Gateway) de `/api/collector/meters` va collector khong doi contract.
+- Them 2 bang giam sat: `GatewayHealth` (bao cao tho tung bus do collector day len: connected, lastOkAt, lastErrorAt, lastError, consecutiveFailures, meterOk/Failed, reportedAt) va `CollectorHeartbeat` (mot dong id="default": lastSeenAt + thong ke chu ky + bufferedCount). Migration `20260723090000_add_gateway_catalog_and_health` (co backfill Gateway tu cac cap gatewayIp/port dang co + link meters).
+- `scripts/energy-push-collector.js`: `readAllMeters` tra `{ readings, gateways }` voi health tung bus (connected/ok/failed/error); `runCycle` LUON push (ke ca khi khong doc duoc dong ho nao / chua khai bao) de gui heartbeat -> phat hien duoc collector chet. Payload push mo rong: `{ readings, gateways, collector }`. KHONG buffer health (trang thai cu gui tre la vo nghia).
+- `/api/collector/ingest` nhan them `{ gateways, collector }` (optional, tuong thich nguoc): upsert GatewayHealth (tu tao Gateway theo ipAddress+port neu chua co), cong don consecutiveFailures, upsert CollectorHeartbeat. Ghi health TRUOC readings, khong return som.
+- API moi: `/api/electric/gateways` (CRUD danh muc, sync dia chi xuong meters khi doi IP/port, DELETE mem khi con dong ho) va `/api/electric/gateway-health` (SUY RA trang thai luc truy van).
+- UI: tab **Gateway Modbus** trong `/electric/catalog` (CRUD); form dong ho AUTO chon Gateway tu danh muc thay vi go IP/port tay (Slave ID + register van go tay); trang moi `/electric/gateways` (`ElectricGatewayHealthClient`) tu lam moi 30s, hien banner canh bao + trang thai tung bus; sidebar them "Tinh trang Gateway".
+
+### Business Rules Update
+
+- **Trang thai gateway KHONG luu cot "status" chot san, ma SUY RA luc truy van** trong `/api/electric/gateway-health`: neu collector chet / mat internet thi khong con ai bao cao, cot status cu se ket cung ONLINE va noi doi -> su VANG MAT cua bao cao (so `reportedAt`/`lastSeenAt` voi hien tai) moi la tin hieu that.
+- Nguong "mat tin hieu" (stale) = max(intervalSec * 3, 180s). Qua nguong: collector coi la OFFLINE, gateway coi la stale.
+- Phan biet 4 trang thai: ONLINE (connect OK, moi dong ho tra loi), DEGRADED (connect OK nhung co dong ho khong tra loi), OFFLINE (khong mo duoc TCP toi cong), UNKNOWN (khong du can cu).
+- **Khi collector mat tin hieu, MOI gateway tra ve UNKNOWN (khong ket luan gateway hong) va chi hien MOT canh bao "collector mat ket noi"** - tranh bao dong gia hang loat vi thu bi hong chinh la thu dang le phai bao cao.
+- Dot nay canh bao CHI hien trong app (chua gui email/Telegram), nen trang thai tinh on-demand, khong can job/cron rieng.
+- Gateway la nguon su that ve dia chi: doi IP/port cua Gateway se dong bo xuong tat ca dong ho thuoc no.
+
+### Feature Ledger Update
+
+| Ngay | Thay doi | File chinh | Verify |
+| --- | --- | --- | --- |
+| 2026-07-23 | Them danh muc Gateway + giam sat suc khoe gateway/collector (health push + heartbeat + suy ra trang thai on-demand + UI canh bao trong app). | `prisma/schema.prisma`, `prisma/migrations/20260723090000_add_gateway_catalog_and_health/migration.sql`, `scripts/energy-push-collector.js`, `src/app/api/collector/ingest/route.ts`, `src/app/api/electric/gateways/route.ts`, `src/app/api/electric/gateway-health/route.ts`, `src/app/api/energy/meters/route.ts`, `src/components/electric/ElectricClients.tsx`, `src/components/AdminLayout.tsx`, `src/app/electric/gateways/page.tsx` | `npx prisma migrate deploy`, `npx prisma generate`, `node --check scripts/energy-push-collector.js`, `npx eslint <cac file>`, `npm run build`, smoke push gia lap 3 gateway (ONLINE/OFFLINE/DEGRADED) + heartbeat -> xem `/electric/gateways` |
