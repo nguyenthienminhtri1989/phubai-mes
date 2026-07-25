@@ -182,12 +182,12 @@ function buildMenuItems(role?: string): MenuProps["items"] {
         {
           key: "/electric/daily-input",
           icon: <FormOutlined />,
-          label: "Nhập ĐH hạ thế",
+          label: "Đồng hồ hạ thế",
         },
         {
           key: "/electric/daily-mv",
           icon: <FormOutlined />,
-          label: "Nhập ĐH trung thế",
+          label: "Đồng hồ trung thế",
         },
       ],
     },
