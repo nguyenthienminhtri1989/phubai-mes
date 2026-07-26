@@ -1,6 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { toRecordDate } from "@/lib/energy-record";
 import { prisma } from "@/lib/prisma";
+
+// Moc dau ngay theo gio Viet Nam. Dung de so khop recordDate theo KHOANG [dau ngay, dau ngay ke)
+// thay vi mot moc chinh xac -> bat duoc CA record nhap tay (Prisma luu 05:00Z) LAN record AUTO
+// (energy-cron ghi qua pg driver tho, luu 12:00Z) cho cung mot ngay. Neu so khop moc chinh xac,
+// record AUTO bi truot 7 tieng -> bao cao thieu san luong ha the (dung bug da gap o daily-status).
+function vnDayStart(dateStr: string) {
+  return new Date(`${dateStr}T00:00:00.000+07:00`);
+}
+function vnNextDayStart(dateStr: string) {
+  const d = vnDayStart(dateStr);
+  d.setDate(d.getDate() + 1);
+  return d;
+}
 
 /**
  * BÁO CÁO ĐIỆN NĂNG — 2 LỚP DỮ LIỆU, TUYỆT ĐỐI KHÔNG CỘNG VÀO NHAU
@@ -111,8 +123,9 @@ export async function GET(request: NextRequest) {
       recordDate:
         startDate || endDate
           ? {
-              gte: startDate ? toRecordDate(startDate) : undefined,
-              lte: endDate ? toRecordDate(endDate) : undefined,
+              // So khop theo khoang ngay VN (xem vnDayStart o dau file).
+              gte: startDate ? vnDayStart(startDate) : undefined,
+              lt: endDate ? vnNextDayStart(endDate) : undefined,
             }
           : undefined,
       meter: meterWhere,
@@ -405,16 +418,17 @@ export async function GET(request: NextRequest) {
   let prevPeriodConsumption = 0;
   let trendPercent: number | null = null;
   if (startDate && endDate) {
-    const start = toRecordDate(startDate);
-    const end = toRecordDate(endDate);
+    // Ky truoc = khoang cung do dai, ngay lien ke truoc startDate. Tinh theo moc dau ngay VN.
+    const start = vnDayStart(startDate);
+    const end = vnNextDayStart(endDate); // moc dau ngay KE TIEP endDate (bien tren, khong bao gom)
     const spanMs = end.getTime() - start.getTime();
-    const prevEnd = new Date(start.getTime() - 24 * 60 * 60 * 1000);
-    const prevStart = new Date(prevEnd.getTime() - spanMs);
+    const prevEnd = start; // dau ngay startDate = bien tren (khong bao gom) cua ky truoc
+    const prevStart = new Date(start.getTime() - spanMs);
 
     // So sánh xu hướng trên sản lượng EVN (không trộn nội bộ vào, tránh đếm trùng).
     const prevRows = await prisma.powerRecord.findMany({
       where: {
-        recordDate: { gte: prevStart, lte: prevEnd },
+        recordDate: { gte: prevStart, lt: prevEnd },
         meter: { ...meterWhere, type: MV_TYPE },
       },
       select: { consTotal: true },

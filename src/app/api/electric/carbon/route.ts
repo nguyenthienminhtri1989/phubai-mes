@@ -1,6 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { toRecordDate } from "@/lib/energy-record";
 import { prisma } from "@/lib/prisma";
+
+// So khop recordDate theo KHOANG ngay VN (xem daily-status/reports): bat duoc ca record nhap tay
+// (Prisma 05:00Z) lan record AUTO (energy-cron 12:00Z) cua cung mot ngay.
+function vnDayStart(dateStr: string) {
+  return new Date(`${dateStr}T00:00:00.000+07:00`);
+}
+function vnNextDayStart(dateStr: string) {
+  const d = vnDayStart(dateStr);
+  d.setDate(d.getDate() + 1);
+  return d;
+}
 
 const MV_TYPE = 2;
 const NO_FACTORY = "__none__";
@@ -64,8 +74,8 @@ export async function GET(request: NextRequest) {
       recordDate:
         startDate || endDate
           ? {
-              gte: startDate ? toRecordDate(startDate) : undefined,
-              lte: endDate ? toRecordDate(endDate) : undefined,
+              gte: startDate ? vnDayStart(startDate) : undefined,
+              lt: endDate ? vnNextDayStart(endDate) : undefined,
             }
           : undefined,
       meter: meterWhere,

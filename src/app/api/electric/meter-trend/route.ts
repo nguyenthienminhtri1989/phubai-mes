@@ -1,6 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { toRecordDate } from "@/lib/energy-record";
 import { prisma } from "@/lib/prisma";
+
+// So khop recordDate theo KHOANG ngay VN (xem chi tiet o daily-status/reports): bat duoc ca
+// record nhap tay (Prisma 05:00Z) lan record AUTO (energy-cron 12:00Z) cua cung mot ngay.
+function vnDayStart(dateStr: string) {
+  return new Date(`${dateStr}T00:00:00.000+07:00`);
+}
+function vnNextDayStart(dateStr: string) {
+  const d = vnDayStart(dateStr);
+  d.setDate(d.getDate() + 1);
+  return d;
+}
 
 /**
  * XU HƯỚNG TIÊU THỤ THEO TỪNG ĐỒNG HỒ (chủ yếu Hạ thế).
@@ -12,7 +22,7 @@ import { prisma } from "@/lib/prisma";
  * của đồng hồ hạ thế là số PHÂN BỔ NGƯỢC từ hoá đơn EVN (xem báo cáo), không có nghĩa khi
  * đứng riêng một đồng hồ.
  *
- * Cách lọc ngày dùng chung `toRecordDate` với báo cáo để số liệu khớp nhau.
+ * Cach loc ngay dung chung KHOANG NGAY VN (vnDayStart) voi bao cao de so lieu khop nhau.
  */
 
 function dateKey(date: Date, groupBy: string) {
@@ -46,8 +56,8 @@ export async function GET(request: NextRequest) {
         recordDate:
           startDate || endDate
             ? {
-                gte: startDate ? toRecordDate(startDate) : undefined,
-                lte: endDate ? toRecordDate(endDate) : undefined,
+                gte: startDate ? vnDayStart(startDate) : undefined,
+                lt: endDate ? vnNextDayStart(endDate) : undefined,
               }
             : undefined,
       },

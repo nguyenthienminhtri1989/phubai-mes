@@ -4,6 +4,18 @@ import { buildPowerRecordValues, toRecordDate } from "@/lib/energy-record";
 import { requireEditor } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 
+// So khop recordDate theo KHOANG ngay VN khi LOC (GET). Record AUTO ghi qua pg driver tho luu
+// 12:00Z, record nhap tay ghi qua Prisma luu 05:00Z -> so khop moc chinh xac se truot record AUTO.
+// LUU Y: POST van dung toRecordDate de GHI (giu nguyen moc 05:00Z cho record nhap tay), khong doi.
+function vnDayStart(dateStr: string) {
+  return new Date(`${dateStr}T00:00:00.000+07:00`);
+}
+function vnNextDayStart(dateStr: string) {
+  const d = vnDayStart(dateStr);
+  d.setDate(d.getDate() + 1);
+  return d;
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const from = searchParams.get("from");
@@ -16,8 +28,8 @@ export async function GET(request: NextRequest) {
       recordDate:
         from || to
           ? {
-              gte: from ? toRecordDate(from) : undefined,
-              lte: to ? toRecordDate(to) : undefined,
+              gte: from ? vnDayStart(from) : undefined,
+              lt: to ? vnNextDayStart(to) : undefined,
             }
           : undefined,
     },
