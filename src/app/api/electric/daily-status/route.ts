@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { toRecordDate } from "@/lib/energy-record";
 import { prisma } from "@/lib/prisma";
 
 function toUnitId(value: string | null) {
@@ -18,7 +17,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Missing date" }, { status: 400 });
   }
 
-  const recordDate = toRecordDate(date);
+  // KHOANG NGAY theo gio Viet Nam de so khop record BAT KE m0c gio luu trong DB.
+  // Ly do: record ghi qua Prisma (nhap tay) luu o 05:00Z, con record ghi qua pg driver tho
+  // (collector AUTO trong energy-cron) luu o 12:00Z cho CUNG mot ngay. Neu so khop recordDate
+  // CHINH XAC thi record AUTO bi truot (lech 7 tieng) -> todayRecord = null du DB co du lieu.
+  // So khop theo khoang [dau ngay VN, dau ngay VN ke tiep) bat duoc ca hai truong hop.
+  const dayStart = new Date(`${date}T00:00:00.000+07:00`);
+  const dayEnd = new Date(dayStart);
+  dayEnd.setDate(dayEnd.getDate() + 1);
   const meterType = searchParams.get("type") ? Number(searchParams.get("type")) : undefined;
   const meterOrderBy =
     meterType === 2
@@ -58,7 +64,7 @@ export async function GET(request: NextRequest) {
         },
       },
       records: {
-        where: { recordDate },
+        where: { recordDate: { gte: dayStart, lt: dayEnd } },
         take: 1,
       },
     },
@@ -71,7 +77,7 @@ export async function GET(request: NextRequest) {
     ? await prisma.powerRecord.findMany({
         where: {
           meterId: { in: meterIds },
-          recordDate: { lt: recordDate },
+          recordDate: { lt: dayStart },
         },
         orderBy: [{ meterId: "asc" }, { recordDate: "desc" }],
         distinct: ["meterId"],
@@ -79,13 +85,13 @@ export async function GET(request: NextRequest) {
     : [];
   const lastByMeter = new Map(lastRecords.map((record) => [record.meterId, record]));
 
-  const sevenDaysAgo = new Date(recordDate);
+  const sevenDaysAgo = new Date(dayStart);
   sevenDaysAgo.setUTCDate(sevenDaysAgo.getUTCDate() - 7);
   const recentRecords = meterIds.length
     ? await prisma.powerRecord.findMany({
         where: {
           meterId: { in: meterIds },
-          recordDate: { gte: sevenDaysAgo, lt: recordDate },
+          recordDate: { gte: sevenDaysAgo, lt: dayStart },
         },
         select: { meterId: true, consTotal: true },
       })

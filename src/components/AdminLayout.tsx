@@ -172,12 +172,12 @@ function buildMenuItems(role?: string): MenuProps["items"] {
         {
           key: "/electric/meter-trend",
           icon: <LineChartOutlined />,
-          label: "Xu hướng đồng hồ",
+          label: "Xu hướng tăng giảm",
         },
         {
           key: "/electric/power-factor",
           icon: <BulbOutlined />,
-          label: "Hệ số cos φ",
+          label: "Hệ số Cos φ",
         },
         {
           key: "/electric/daily-input",
