@@ -35,9 +35,19 @@ export function TrendLineChart({
     isCost && v >= 1_000_000
       ? (v / 1_000_000).toLocaleString("vi-VN", { maximumFractionDigits: 1 }) + " tr"
       : Math.round(v).toLocaleString("vi-VN");
+  // Label GON tren tung diem (khong kem don vi de do dai): tien >= 1tr rut gon "tr".
+  const fmtPoint = (v: number) =>
+    isCost
+      ? v >= 1_000_000
+        ? (v / 1_000_000).toLocaleString("vi-VN", { maximumFractionDigits: 2 }) + "tr"
+        : Math.round(v).toLocaleString("vi-VN")
+      : v.toLocaleString("vi-VN", { maximumFractionDigits: 1 });
 
-  const width = 900;
-  const padding = { top: 16, right: 16, bottom: 28, left: isCost ? 60 : 48 };
+  // Chieu rong dong theo so diem: >15 ngay thi gian ra ~54px/diem de label so le du cho
+  // (30 ngay -> ~1620px, container tu cuon ngang). Toi thieu giu 900 cho ky ngan.
+  const width = Math.max(900, data.length * 54);
+  // Chua them khoang tren/duoi cho label so le khong bi cat.
+  const padding = { top: 30, right: 20, bottom: 40, left: isCost ? 64 : 48 };
   const innerW = width - padding.left - padding.right;
   const innerH = height - padding.top - padding.bottom;
 
@@ -65,8 +75,16 @@ export function TrendLineChart({
     return baseColor;
   };
 
-  return (
-    <svg viewBox={`0 0 ${width} ${height}`} width="100%" height={height}>
+  // Neu rong hon 900 (nhieu ngay) -> giu chieu rong that va cho cuon ngang, de label so le du cho.
+  const needsScroll = width > 900;
+
+  const chart = (
+    <svg
+      viewBox={`0 0 ${width} ${height}`}
+      width={needsScroll ? width : "100%"}
+      height={height}
+      style={{ display: "block" }}
+    >
       {tickValues.map((tv, i) => (
         <g key={i}>
           <line x1={padding.left} x2={width - padding.right} y1={y(tv)} y2={y(tv)} stroke="#f0f0f0" strokeWidth={1} />
@@ -92,6 +110,27 @@ export function TrendLineChart({
           </circle>
         );
       })}
+      {/* Label gia tri SO LE tren/duoi tung diem: diem chan dat tren, le dat duoi, tranh de nhau.
+          Font nho + manh + nghieng nhe cho de doc khi diem sat nhau. */}
+      {data.map((d, i) => {
+        const cur = valueOf(d);
+        const above = i % 2 === 0; // so le
+        const yPos = above ? y(cur) - 9 : y(cur) + 16;
+        return (
+          <text
+            key={`lbl-${i}`}
+            x={x(i)}
+            y={yPos}
+            textAnchor="middle"
+            fontSize={9}
+            fontWeight={300}
+            fill="#8c8c8c"
+            transform={`rotate(-25 ${x(i)} ${yPos})`}
+          >
+            {fmtPoint(cur)}
+          </text>
+        );
+      })}
       {data.map((d, i) =>
         i % labelStep === 0 || i === data.length - 1 ? (
           <text key={i} x={x(i)} y={height - 6} textAnchor="middle" fontSize={11} fill="#8c8c8c">
@@ -101,6 +140,16 @@ export function TrendLineChart({
       )}
     </svg>
   );
+
+  // Khi it ngay: SVG co gian vua khung (width 100%). Khi nhieu ngay: giu rong that + cuon ngang.
+  if (needsScroll) {
+    return (
+      <div style={{ overflowX: "auto", width: "100%" }}>
+        <div style={{ width, minWidth: width }}>{chart}</div>
+      </div>
+    );
+  }
+  return chart;
 }
 
 export function RankedBarChart({
