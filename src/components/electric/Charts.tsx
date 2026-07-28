@@ -276,9 +276,12 @@ export function MultiTrendChart({
   if (dates.length === 0 || series.length === 0)
     return <NoData text="Chọn đồng hồ để xem xu hướng tiêu thụ" />;
 
-  const width = 960;
+  // Chieu rong dong theo so ngay, tuong tu TrendLineChart.
+  const width = Math.max(960, dates.length * 54);
   const legendH = Math.ceil(series.length / 3) * 22 + 8;
-  const padding = { top: 16, right: 16, bottom: 34 + legendH, left: 56 };
+  // Chi hien label so le khi it series (<= 3) de khong roi mat.
+  const showPointLabels = series.length <= 3;
+  const padding = { top: showPointLabels ? 30 : 16, right: 20, bottom: 34 + legendH, left: 56 };
   const innerW = width - padding.left - padding.right;
   const innerH = height - padding.top - padding.bottom;
 
@@ -306,8 +309,15 @@ export function MultiTrendChart({
   const labelStep = Math.max(1, Math.ceil(n / 12));
   const color = (i: number) => palette[i % palette.length];
 
-  return (
-    <svg viewBox={`0 0 ${width} ${height}`} width="100%" height={height}>
+  const needsScroll = width > 960;
+
+  const chart = (
+    <svg
+      viewBox={`0 0 ${width} ${height}`}
+      width={needsScroll ? width : "100%"}
+      height={height}
+      style={{ display: "block" }}
+    >
       {tickValues.map((tv, i) => (
         <g key={i}>
           <line
@@ -398,6 +408,39 @@ export function MultiTrendChart({
             );
           })}
 
+      {/* Label gia tri SO LE tren/duoi (phuong an C) — chi hien khi <= 3 series de khong roi.
+          So le dua tren (index diem + index series) de cac duong khac nhau lech pha. */}
+      {showPointLabels &&
+        series.map((s, si) => (
+          <g key={`lbl-${si}`}>
+            {s.points.map((v, i) => {
+              if (v == null) return null;
+              const above = (i + si) % 2 === 0;
+              const yPos = kind === "column"
+                ? y(v) - 6
+                : above ? y(v) - 9 : y(v) + 16;
+              return (
+                <text
+                  key={i}
+                  x={kind === "column"
+                    ? xCenter(i) - (xBand * 0.7) / 2 + si * ((xBand * 0.7) / series.length) + ((xBand * 0.7) / series.length) / 2
+                    : xCenter(i)}
+                  y={yPos}
+                  textAnchor="middle"
+                  fontSize={9}
+                  fontWeight={300}
+                  fill={color(si)}
+                  transform={`rotate(-25 ${kind === "column"
+                    ? xCenter(i) - (xBand * 0.7) / 2 + si * ((xBand * 0.7) / series.length) + ((xBand * 0.7) / series.length) / 2
+                    : xCenter(i)} ${yPos})`}
+                >
+                  {fmtVal(v)}
+                </text>
+              );
+            })}
+          </g>
+        ))}
+
       {dates.map((d, i) =>
         i % labelStep === 0 || i === n - 1 ? (
           <text
@@ -430,4 +473,13 @@ export function MultiTrendChart({
       })}
     </svg>
   );
+
+  if (needsScroll) {
+    return (
+      <div style={{ overflowX: "auto", width: "100%" }}>
+        <div style={{ width, minWidth: width }}>{chart}</div>
+      </div>
+    );
+  }
+  return chart;
 }
