@@ -30,6 +30,7 @@ import {
   InputNumber,
   Modal,
   Popconfirm,
+  Radio,
   Row,
   Segmented,
   Select,
@@ -3555,7 +3556,7 @@ export function ElectricLiveClient() {
   const filteredMeters = useMemo(
     () =>
       meters.filter((meter) => {
-        if (filterFactoryId && meter.transformer?.factoryId !== filterFactoryId)
+        if (filterFactoryId && getMeterFactoryId(meter) !== filterFactoryId)
           return false;
         if (filterTransformerId && meter.transformerId !== filterTransformerId)
           return false;
@@ -3574,6 +3575,25 @@ export function ElectricLiveClient() {
       filterTransformerUnitId,
       filterGroupId,
     ],
+  );
+
+  const factoryFilterOptions = useMemo(
+    () => [
+      { label: "Tất cả", value: "__all" },
+      ...factories.map((item) => ({ label: item.name, value: item.id })),
+    ],
+    [factories],
+  );
+
+  const transformerFilterOptions = useMemo(
+    () => [
+      { label: "Tất cả", value: "__all" },
+      ...filteredTransformers.map((item) => ({
+        label: item.factory ? item.factory.name + " - " + item.name : item.name,
+        value: item.id,
+      })),
+    ],
+    [filteredTransformers],
   );
 
   const meter = meters.find((item) => item.id === selectedMeterId);
@@ -3634,91 +3654,74 @@ export function ElectricLiveClient() {
         subtitle="Lọc nhanh và đọc trực tiếp từng đồng hồ AUTO qua Modbus Gateway."
       />
       <Card style={{ marginBottom: 16 }}>
-        <Row gutter={[12, 12]}>
-          <Col xs={24} md={8} lg={5}>
-            <Select
-              allowClear
-              placeholder="Nhà máy"
-              style={{ width: "100%" }}
-              value={filterFactoryId}
-              onChange={(value) => {
-                setFilterFactoryId(value);
-                setFilterTransformerId(undefined);
-                setFilterTransformerUnitId(undefined);
-                selectMeter(undefined);
-              }}
-              options={factories.map((item) => ({
-                label: item.name,
-                value: item.id,
-              }))}
-            />
-          </Col>
-          <Col xs={24} md={8} lg={6}>
-            <Select
-              allowClear
-              placeholder="Trạm biến áp"
-              style={{ width: "100%" }}
-              value={filterTransformerId}
-              onChange={(value) => {
-                setFilterTransformerId(value);
-                setFilterTransformerUnitId(undefined);
-                selectMeter(undefined);
-              }}
-              options={filteredTransformers.map((item) => ({
-                label: item.factory
-                  ? item.factory.name + " - " + item.name
-                  : item.name,
-                value: item.id,
-              }))}
-            />
-          </Col>
-          <Col xs={24} md={8} lg={5}>
-            <Select
-              allowClear
-              placeholder="Nhóm đồng hồ"
-              style={{ width: "100%" }}
-              value={filterGroupId}
-              onChange={(value) => {
-                setFilterGroupId(value);
-                selectMeter(undefined);
-              }}
-              options={groups.map((item) => ({
-                label: item.name,
-                value: item.id,
-              }))}
-            />
-          </Col>
-          <Col xs={24} md={8} lg={5}>
-            <Select
-              allowClear
-              placeholder="Máy biến áp"
-              style={{ width: "100%" }}
-              value={filterTransformerUnitId}
-              onChange={(value) => {
-                setFilterTransformerUnitId(value);
-                selectMeter(undefined);
-              }}
-              options={filteredLiveTransformerUnits.map((item) => ({
-                label: item.name,
-                value: item.id,
-              }))}
-            />
-          </Col>
-          <Col xs={24} lg={8}>
-            <Space wrap style={{ width: "100%" }}>
+        <Space direction="vertical" size={16} style={{ width: "100%" }}>
+          <div>
+            <Text strong>Nhà máy</Text>
+            <div style={{ marginTop: 8, overflowX: "auto", paddingBottom: 2 }}>
+              <Segmented
+                value={filterFactoryId || "__all"}
+                onChange={(value) => {
+                  const nextValue = value === "__all" ? undefined : String(value);
+                  setFilterFactoryId(nextValue);
+                  setFilterTransformerId(undefined);
+                  setFilterTransformerUnitId(undefined);
+                  selectMeter(undefined);
+                }}
+                options={factoryFilterOptions}
+              />
+            </div>
+          </div>
+
+          <div>
+            <Text strong>Trạm biến áp</Text>
+            <div style={{ marginTop: 8, overflowX: "auto", paddingBottom: 2 }}>
+              <Segmented
+                value={filterTransformerId || "__all"}
+                onChange={(value) => {
+                  const nextValue = value === "__all" ? undefined : String(value);
+                  setFilterTransformerId(nextValue);
+                  setFilterTransformerUnitId(undefined);
+                  selectMeter(undefined);
+                }}
+                options={transformerFilterOptions}
+              />
+            </div>
+          </div>
+
+          <Row gutter={[12, 12]}>
+            <Col xs={24} md={8} lg={6}>
               <Select
                 allowClear
-                showSearch
-                placeholder="Chọn đồng hồ AUTO"
-                style={{ minWidth: 280, flex: 1 }}
-                value={selectedMeterId}
-                onChange={selectMeter}
-                optionFilterProp="label"
-                options={filteredMeters.map((item) => ({
-                  label: item.code + " - " + item.name,
+                placeholder="Nhóm đồng hồ"
+                style={{ width: "100%" }}
+                value={filterGroupId}
+                onChange={(value) => {
+                  setFilterGroupId(value);
+                  selectMeter(undefined);
+                }}
+                options={groups.map((item) => ({
+                  label: item.name,
                   value: item.id,
                 }))}
               />
+            </Col>
+            <Col xs={24} md={8} lg={6}>
+              <Select
+                allowClear
+                placeholder="Máy biến áp"
+                style={{ width: "100%" }}
+                value={filterTransformerUnitId}
+                onChange={(value) => {
+                  setFilterTransformerUnitId(value);
+                  selectMeter(undefined);
+                }}
+                options={filteredLiveTransformerUnits.map((item) => ({
+                  label: item.name,
+                  value: item.id,
+                }))}
+              />
+            </Col>
+            <Col xs={24} md={8} lg={6}>
               {canEditDaily && (
                 <Button
                   type="primary"
@@ -3730,9 +3733,44 @@ export function ElectricLiveClient() {
                   Đọc realtime
                 </Button>
               )}
+            </Col>
+          </Row>
+
+          <div>
+            <Space align="center" style={{ marginBottom: 8 }}>
+              <Text strong>Đồng hồ AUTO</Text>
+              <Tag color="blue">{filteredMeters.length} đồng hồ</Tag>
             </Space>
-          </Col>
-        </Row>
+            {filteredMeters.length === 0 ? (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description="Không có đồng hồ AUTO phù hợp bộ lọc"
+              />
+            ) : (
+              <Radio.Group
+                value={selectedMeterId}
+                onChange={(event) => selectMeter(event.target.value)}
+                style={{ width: "100%" }}
+              >
+                <Row gutter={[8, 8]}>
+                  {filteredMeters.map((item) => (
+                    <Col xs={24} md={12} xl={8} key={item.id}>
+                      <Radio value={item.id} style={{ width: "100%" }}>
+                        <Space direction="vertical" size={0}>
+                          <Text strong>{item.code} - {item.name}</Text>
+                          <Text type="secondary">
+                            {item.transformer?.name || "Chưa gắn trạm"}
+                            {item.transformerUnit ? " / " + item.transformerUnit.name : ""}
+                          </Text>
+                        </Space>
+                      </Radio>
+                    </Col>
+                  ))}
+                </Row>
+              </Radio.Group>
+            )}
+          </div>
+        </Space>
       </Card>
 
       {!selectedMeterId ? (

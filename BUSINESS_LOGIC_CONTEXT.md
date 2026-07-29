@@ -667,3 +667,16 @@ costAllocated(record) = consTotal(record) x rate(nha may)
 | Ngay | Thay doi | File chinh | Verify |
 | --- | --- | --- | --- |
 | 2026-07-23 | Them danh muc Gateway + giam sat suc khoe gateway/collector (health push + heartbeat + suy ra trang thai on-demand + UI canh bao trong app). | `prisma/schema.prisma`, `prisma/migrations/20260723090000_add_gateway_catalog_and_health/migration.sql`, `scripts/energy-push-collector.js`, `src/app/api/collector/ingest/route.ts`, `src/app/api/electric/gateways/route.ts`, `src/app/api/electric/gateway-health/route.ts`, `src/app/api/energy/meters/route.ts`, `src/components/electric/ElectricClients.tsx`, `src/components/AdminLayout.tsx`, `src/app/electric/gateways/page.tsx` | `npx prisma migrate deploy`, `npx prisma generate`, `node --check scripts/energy-push-collector.js`, `npx eslint <cac file>`, `npm run build`, smoke push gia lap 3 gateway (ONLINE/OFFLINE/DEGRADED) + heartbeat -> xem `/electric/gateways` |
+
+## 2026-07-29 - Electric live quick filters
+
+### Current State Update
+
+- Trang `/electric/live` van giu co che realtime mot dong ho moi lan qua `/api/electric/live?meterId=...`, nhung bo loc thao tac nhanh hon: Nha may va Tram bien ap dung `Segmented` toggle, dong ho AUTO duoc chon bang danh sach `Radio` theo bo loc hien tai thay vi dropdown.
+- Bo loc Nhom dong ho va May bien ap van giu dang dropdown phu tro de thu hep danh sach khi can, khong doi contract API hay cach doc Gateway.
+
+### Feature Ledger Update
+
+| Ngay | Thay doi | File chinh | Verify |
+| --- | --- | --- | --- |
+| 2026-07-29 | Doi UX trang realtime: Nha may/Tram bien ap thanh toggle, dong ho AUTO thanh radio list theo bo loc; giu doc mot dong ho/luc de tranh tai Gateway. | `src/components/electric/ElectricClients.tsx`, `BUSINESS_LOGIC_CONTEXT.md` | `npx eslint src/components/electric/ElectricClients.tsx`, `npm run build` |
