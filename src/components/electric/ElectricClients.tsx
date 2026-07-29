@@ -3565,7 +3565,7 @@ export function ElectricLiveClient() {
     () => [
       { label: "Tất cả", value: "__all" },
       ...filteredTransformers.map((item) => ({
-        label: item.factory ? item.factory.name + " - " + item.name : item.name,
+        label: item.name,
         value: item.id,
       })),
     ],
@@ -3603,9 +3603,6 @@ export function ElectricLiveClient() {
   };
 
   const displayValue = liveData?.totalEnergy ?? 0;
-  const meterLabel = meter
-    ? meter.code + " - " + meter.name
-    : "Chưa chọn đồng hồ";
   const factoryName =
     meter?.factory?.name ||
     meter?.transformer?.factory?.name ||

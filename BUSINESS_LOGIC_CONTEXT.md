@@ -722,3 +722,15 @@ costAllocated(record) = consTotal(record) x rate(nha may)
 | Ngay | Thay doi | File chinh | Verify |
 | --- | --- | --- | --- |
 | 2026-07-29 | Sua so lieu card tren /electric/daily-input de dem theo danh sach dong ho ha the dang hien thi, tranh lech khi API tra them dong ho trung the bi an. | src/components/electric/ElectricClients.tsx, BUSINESS_LOGIC_CONTEXT.md | npx eslint src/components/electric/ElectricClients.tsx, npm run build |
+
+## 2026-07-29 - Electric live transformer toggle labels
+
+### Current State Update
+
+- Bo loc Tram bien ap tren `/electric/live` van dung `Segmented` toggle, nhung moi nut chi hien ten tram bien ap; ten nha may khong con ghep vao nhan nut vi da co bo loc Nha may rieng ngay phia tren.
+
+### Feature Ledger Update
+
+| Ngay | Thay doi | File chinh | Verify |
+| --- | --- | --- | --- |
+| 2026-07-29 | Doi nhan toggle loc Tram bien ap tren /electric/live tu "ten nha may - ten tram" sang chi "ten tram". | src/components/electric/ElectricClients.tsx, BUSINESS_LOGIC_CONTEXT.md | npx eslint src/components/electric/ElectricClients.tsx |

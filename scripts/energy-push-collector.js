@@ -171,12 +171,17 @@ async function readAllMeters(meters) {
             client.setID(meter.modbusId);
             const data = await client.readInputRegisters(meter.registerAddr || 0, 2);
             const totalEnergy = Number(parseSelecFloat(data.buffer, 0).toFixed(2));
+            // Nghi giua 2 lan doc lien tiep tren cung 1 dong ho: gateway/dong ho
+            // khong kip xu ly 2 request Modbus dồn qua sat nhau -> lan 2 timeout.
+            await new Promise((r) => setTimeout(r, 80));
             // Doc them Total kW (register 14 / 0x0E) - cong suat tuc thoi
             let power = null;
             try {
               const pwData = await client.readInputRegisters(14, 2);
               power = Number(parseSelecFloat(pwData.buffer, 0).toFixed(2));
-            } catch { /* khong co power cung khong sao */ }
+            } catch (pwErr) {
+              console.error(`    (khong doc duoc kW cho ${meter.code || meter.id}: ${pwErr.message})`);
+            }
             readings.push({
               meterId: meter.id,
               totalEnergy,
