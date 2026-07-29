@@ -694,3 +694,17 @@ costAllocated(record) = consTotal(record) x rate(nha may)
 | Ngay | Thay doi | File chinh | Verify |
 | --- | --- | --- | --- |
 | 2026-07-29 | Bo nut doc realtime thu cong, tu fetch live khi chon radio dong ho; sap lai layout thanh danh sach ben trai va mat dong ho + thong tin ben phai; bo card tong kWh va xu huong gan day. | `src/components/electric/ElectricClients.tsx`, `BUSINESS_LOGIC_CONTEXT.md` | `npx eslint src/components/electric/ElectricClients.tsx`, `npm run build` |
+
+## 2026-07-29 - Electric live stable detail pane
+
+### Current State Update
+
+- Khung ben phai cua `/electric/live` (mat dong ho + `Thong tin dong ho`) render co dinh ngay ca khi chua chon dong ho; khi chua chon thi cac truong hien `---` va gia tri dong ho la 0.
+- Khi doi radio dong ho ben trai, UI chi cap nhat du lieu hien thi trong khung co san, khong thay bang Empty/card khac de tranh nhay giao dien.
+- Them guard thu tu request realtime de response cu khong ghi de response moi neu nguoi dung doi dong ho nhanh.
+
+### Feature Ledger Update
+
+| Ngay | Thay doi | File chinh | Verify |
+| --- | --- | --- | --- |
+| 2026-07-29 | Giu mat dong ho va card thong tin dong ho render co dinh tren /electric/live, chi cap nhat gia tri khi chon radio; them guard chong response realtime cu ghi de. | `src/components/electric/ElectricClients.tsx`, `BUSINESS_LOGIC_CONTEXT.md` | `npx eslint src/components/electric/ElectricClients.tsx`, `npm run build` |

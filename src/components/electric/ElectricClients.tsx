@@ -3452,6 +3452,7 @@ export function ElectricLiveClient() {
   const [selectedMeterId, setSelectedMeterId] = useState<string>();
   const [liveData, setLiveData] = useState<LiveData | null>(null);
   const [loading, setLoading] = useState(false);
+  const liveRequestSeq = useRef(0);
 
   useEffect(() => {
     Promise.all([
@@ -3549,35 +3550,50 @@ export function ElectricLiveClient() {
   const meter = meters.find((item) => item.id === selectedMeterId);
 
   const readLive = useCallback(async (meterId: string) => {
+    const requestSeq = liveRequestSeq.current + 1;
+    liveRequestSeq.current = requestSeq;
     setLoading(true);
     try {
       const data = await fetchJson<LiveData>(
         "/api/electric/live?meterId=" + encodeURIComponent(meterId),
       );
-      setLiveData(data);
+      if (liveRequestSeq.current === requestSeq) setLiveData(data);
     } catch (error) {
-      setLiveData(null);
-      message.error(
-        error instanceof Error ? error.message : "Không đọc được realtime",
-      );
+      if (liveRequestSeq.current === requestSeq) {
+        setLiveData(null);
+        message.error(
+          error instanceof Error ? error.message : "Không đọc được realtime",
+        );
+      }
     } finally {
-      setLoading(false);
+      if (liveRequestSeq.current === requestSeq) setLoading(false);
     }
   }, []);
 
   const selectMeter = (meterId?: string) => {
     setSelectedMeterId(meterId);
     setLiveData(null);
-    if (meterId) void readLive(meterId);
+    if (meterId) {
+      void readLive(meterId);
+    } else {
+      liveRequestSeq.current += 1;
+      setLoading(false);
+    }
   };
 
   const displayValue = liveData?.totalEnergy ?? 0;
+  const meterLabel = meter ? meter.code + " - " + meter.name : "Chưa chọn đồng hồ";
+  const factoryName =
+    meter?.factory?.name ||
+    meter?.transformer?.factory?.name ||
+    meter?.transformerUnit?.transformer?.factory?.name ||
+    "---";
 
   return (
     <>
       <PageTitle
         title="Realtime điện năng"
-        subtitle="Lọc nhanh và đọc trực tiếp từng đồng hồ AUTO qua Modbus Gateway."
+        subtitle="Lọc nhanh và xem bản đọc mới nhất của từng đồng hồ AUTO."
       />
       <Card style={{ marginBottom: 16 }}>
         <Space direction="vertical" size={16} style={{ width: "100%" }}>
@@ -3692,48 +3708,41 @@ export function ElectricLiveClient() {
         </Col>
 
         <Col xs={24} lg={16}>
-          {!selectedMeterId ? (
-            <Card>
-              <Empty description="Chọn một đồng hồ AUTO để xem realtime" />
+          <Space direction="vertical" size={16} style={{ width: "100%" }}>
+            <Card
+              extra={loading ? <Tag color="processing">Đang đọc</Tag> : null}
+              style={{ background: "#f8fafc", borderColor: "#dbe5f0" }}
+              styles={{ body: { padding: 20 } }}
+            >
+              <MeterFace
+                value={displayValue}
+                online={!!liveData}
+                label={meterLabel}
+              />
             </Card>
-          ) : (
-            <Space direction="vertical" size={16} style={{ width: "100%" }}>
-              <Card
-                loading={loading}
-                style={{ background: "#f8fafc", borderColor: "#dbe5f0" }}
-                styles={{ body: { padding: 20 } }}
-              >
-                <MeterFace
-                  value={displayValue}
-                  online={!!liveData}
-                  label={(meter?.code || "") + " - " + (meter?.name || "")}
-                />
-              </Card>
 
-              <Card size="small" title="Thông tin đồng hồ">
-                <Space direction="vertical" size={4}>
-                  <Text>
-                    Gateway:{" "}
-                    <b>
-                      {meter?.gatewayIp}:{meter?.gatewayPort}
-                    </b>{" "}
-                    - Slave ID <b>{meter?.modbusId}</b>
-                  </Text>
-                  <Text>
-                    Nhà máy: {meter?.factory?.name || meter?.transformer?.factory?.name || meter?.transformerUnit?.transformer?.factory?.name || "---"} -
-                    Trạm: {meter?.transformer?.name || "---"}
-                  </Text>
-                  <Text>
-                    Nhóm: {meter?.group?.name || "---"} - TU/TI: {meter?.tu} /{" "}
-                    {meter?.ti}
-                  </Text>
-                  <Text type="secondary">
-                    Lần đọc gần nhất: {liveData ? dayjs(liveData.timestamp).format("DD/MM/YYYY HH:mm:ss") : "---"}
-                  </Text>
-                </Space>
-              </Card>
-            </Space>
-          )}
+            <Card size="small" title="Thông tin đồng hồ">
+              <Space direction="vertical" size={4}>
+                <Text>
+                  Gateway:{" "}
+                  <b>
+                    {meter?.gatewayIp || "---"}:{meter?.gatewayPort || "---"}
+                  </b>{" "}
+                  - Slave ID <b>{meter?.modbusId || "---"}</b>
+                </Text>
+                <Text>
+                  Nhà máy: {factoryName} - Trạm: {meter?.transformer?.name || "---"}
+                </Text>
+                <Text>
+                  Nhóm: {meter?.group?.name || "---"} - TU/TI: {meter?.tu ?? "---"} /{" "}
+                  {meter?.ti ?? "---"}
+                </Text>
+                <Text type="secondary">
+                  Lần đọc gần nhất: {liveData ? dayjs(liveData.timestamp).format("DD/MM/YYYY HH:mm:ss") : "---"}
+                </Text>
+              </Space>
+            </Card>
+          </Space>
         </Col>
       </Row>
     </>
