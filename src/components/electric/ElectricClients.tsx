@@ -3451,7 +3451,6 @@ export function ElectricLiveClient() {
   const [filterGroupId, setFilterGroupId] = useState<string>();
   const [selectedMeterId, setSelectedMeterId] = useState<string>();
   const [liveData, setLiveData] = useState<LiveData | null>(null);
-  const [loading, setLoading] = useState(false);
   const liveRequestSeq = useRef(0);
 
   useEffect(() => {
@@ -3552,7 +3551,6 @@ export function ElectricLiveClient() {
   const readLive = useCallback(async (meterId: string) => {
     const requestSeq = liveRequestSeq.current + 1;
     liveRequestSeq.current = requestSeq;
-    setLoading(true);
     try {
       const data = await fetchJson<LiveData>(
         "/api/electric/live?meterId=" + encodeURIComponent(meterId),
@@ -3565,8 +3563,6 @@ export function ElectricLiveClient() {
           error instanceof Error ? error.message : "Không đọc được realtime",
         );
       }
-    } finally {
-      if (liveRequestSeq.current === requestSeq) setLoading(false);
     }
   }, []);
 
@@ -3577,7 +3573,6 @@ export function ElectricLiveClient() {
       void readLive(meterId);
     } else {
       liveRequestSeq.current += 1;
-      setLoading(false);
     }
   };
 
@@ -3710,7 +3705,6 @@ export function ElectricLiveClient() {
         <Col xs={24} lg={16}>
           <Space direction="vertical" size={16} style={{ width: "100%" }}>
             <Card
-              extra={loading ? <Tag color="processing">Đang đọc</Tag> : null}
               style={{ background: "#f8fafc", borderColor: "#dbe5f0" }}
               styles={{ body: { padding: 20 } }}
             >

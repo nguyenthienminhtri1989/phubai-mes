@@ -702,6 +702,7 @@ costAllocated(record) = consTotal(record) x rate(nha may)
 - Khung ben phai cua `/electric/live` (mat dong ho + `Thong tin dong ho`) render co dinh ngay ca khi chua chon dong ho; khi chua chon thi cac truong hien `---` va gia tri dong ho la 0.
 - Khi doi radio dong ho ben trai, UI chi cap nhat du lieu hien thi trong khung co san, khong thay bang Empty/card khac de tranh nhay giao dien.
 - Them guard thu tu request realtime de response cu khong ghi de response moi neu nguoi dung doi dong ho nhanh.
+- Bo tag `Dang doc` khoi card mat dong ho realtime de header card khong doi chieu cao khi doi dong ho, tranh nhay layout.
 
 ### Feature Ledger Update
 
