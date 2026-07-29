@@ -434,60 +434,13 @@ function postBody(
   };
 }
 
-function Sparkline({ values }: { values: number[] }) {
-  if (values.length < 2) {
-    return (
-      <Empty
-        image={Empty.PRESENTED_IMAGE_SIMPLE}
-        description="Chưa đủ dữ liệu để vẽ biểu đồ"
-      />
-    );
-  }
-
-  const width = 560;
-  const height = 100;
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = max - min || 1;
-  const points = values.map((value, index) => {
-    const x = (index / (values.length - 1)) * (width - 16) + 8;
-    const y = height - 12 - ((value - min) / range) * (height - 24);
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  });
-  const areaPoints = `8,${height - 12} ${points.join(" ")} ${width - 8},${height - 12}`;
-
-  return (
-    <svg viewBox={`0 0 ${width} ${height}`} width="100%" height={height}>
-      <polygon points={areaPoints} fill="#faad14" opacity={0.12} />
-      <polyline
-        points={points.join(" ")}
-        fill="none"
-        stroke="#faad14"
-        strokeWidth={2}
-      />
-      {points.map((point, index) => {
-        const [x, y] = point.split(",");
-        return (
-          <circle
-            key={index}
-            cx={x}
-            cy={y}
-            r={index === points.length - 1 ? 3.5 : 2}
-            fill="#faad14"
-          />
-        );
-      })}
-    </svg>
-  );
-}
-
-function PageTitle({ title, subtitle }: { title: string; subtitle: string }) {
+function PageTitle({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
     <div style={{ marginBottom: 16 }}>
-      <Title level={3} style={{ margin: 0 }}>
+      <Title level={3} style={{ marginBottom: 4 }}>
         {title}
       </Title>
-      <Text type="secondary">{subtitle}</Text>
+      {subtitle && <Text type="secondary">{subtitle}</Text>}
     </div>
   );
 }
@@ -3484,7 +3437,6 @@ export function ElectricDailyInputClient() {
 }
 
 export function ElectricLiveClient() {
-  const { canEditDaily } = useRole();
   const [factories, setFactories] = useState<Factory[]>([]);
   const [transformers, setTransformers] = useState<Transformer[]>([]);
   const [transformerUnits, setTransformerUnits] = useState<TransformerUnit[]>(
@@ -3499,9 +3451,7 @@ export function ElectricLiveClient() {
   const [filterGroupId, setFilterGroupId] = useState<string>();
   const [selectedMeterId, setSelectedMeterId] = useState<string>();
   const [liveData, setLiveData] = useState<LiveData | null>(null);
-  const [history, setHistory] = useState<Telemetry[]>([]);
   const [loading, setLoading] = useState(false);
-  const [historyLoading, setHistoryLoading] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -3598,54 +3548,30 @@ export function ElectricLiveClient() {
 
   const meter = meters.find((item) => item.id === selectedMeterId);
 
-  const loadHistory = useCallback(async (meterId: string) => {
-    setHistoryLoading(true);
-    try {
-      const data = await fetchJson<Telemetry[]>(
-        "/api/energy/telemetry?meterId=" + meterId + "&take=20",
-      );
-      setHistory(data.slice().reverse());
-    } catch {
-      setHistory([]);
-    } finally {
-      setHistoryLoading(false);
-    }
-  }, []);
-
-  const selectMeter = (meterId?: string) => {
-    setSelectedMeterId(meterId);
-    setLiveData(null);
-    if (meterId) {
-      void loadHistory(meterId);
-    } else {
-      setHistory([]);
-    }
-  };
-
-  const readLive = async () => {
-    if (!selectedMeterId) {
-      message.warning("Chọn một đồng hồ AUTO cần đọc");
-      return;
-    }
+  const readLive = useCallback(async (meterId: string) => {
     setLoading(true);
     try {
       const data = await fetchJson<LiveData>(
-        "/api/electric/live?meterId=" + encodeURIComponent(selectedMeterId),
+        "/api/electric/live?meterId=" + encodeURIComponent(meterId),
       );
       setLiveData(data);
-      message.success("Đã đọc realtime và lưu telemetry");
-      void loadHistory(selectedMeterId);
     } catch (error) {
+      setLiveData(null);
       message.error(
         error instanceof Error ? error.message : "Không đọc được realtime",
       );
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  const selectMeter = (meterId?: string) => {
+    setSelectedMeterId(meterId);
+    setLiveData(null);
+    if (meterId) void readLive(meterId);
   };
 
-  const displayValue =
-    liveData?.totalEnergy ?? history[history.length - 1]?.totalEnergy ?? 0;
+  const displayValue = liveData?.totalEnergy ?? 0;
 
   return (
     <>
@@ -3721,26 +3647,21 @@ export function ElectricLiveClient() {
                 }))}
               />
             </Col>
-            <Col xs={24} md={8} lg={6}>
-              {canEditDaily && (
-                <Button
-                  type="primary"
-                  icon={<ThunderboltOutlined />}
-                  loading={loading}
-                  onClick={readLive}
-                  disabled={!selectedMeterId}
-                >
-                  Đọc realtime
-                </Button>
-              )}
-            </Col>
           </Row>
+        </Space>
+      </Card>
 
-          <div>
-            <Space align="center" style={{ marginBottom: 8 }}>
-              <Text strong>Đồng hồ AUTO</Text>
-              <Tag color="blue">{filteredMeters.length} đồng hồ</Tag>
-            </Space>
+      <Row gutter={[16, 16]} align="top">
+        <Col xs={24} lg={8}>
+          <Card
+            title={
+              <Space>
+                <span>Đồng hồ AUTO</span>
+                <Tag color="blue">{filteredMeters.length} đồng hồ</Tag>
+              </Space>
+            }
+            styles={{ body: { maxHeight: 560, overflowY: "auto", paddingRight: 12 } }}
+          >
             {filteredMeters.length === 0 ? (
               <Empty
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -3752,91 +3673,43 @@ export function ElectricLiveClient() {
                 onChange={(event) => selectMeter(event.target.value)}
                 style={{ width: "100%" }}
               >
-                <Row gutter={[8, 8]}>
+                <Space direction="vertical" size={10} style={{ width: "100%" }}>
                   {filteredMeters.map((item) => (
-                    <Col xs={24} md={12} xl={8} key={item.id}>
-                      <Radio value={item.id} style={{ width: "100%" }}>
-                        <Space direction="vertical" size={0}>
-                          <Text strong>{item.code} - {item.name}</Text>
-                          <Text type="secondary">
-                            {item.transformer?.name || "Chưa gắn trạm"}
-                            {item.transformerUnit ? " / " + item.transformerUnit.name : ""}
-                          </Text>
-                        </Space>
-                      </Radio>
-                    </Col>
+                    <Radio key={item.id} value={item.id} style={{ width: "100%" }}>
+                      <Space direction="vertical" size={0}>
+                        <Text strong>{item.code} - {item.name}</Text>
+                        <Text type="secondary">
+                          {item.transformer?.name || "Chưa gắn trạm"}
+                          {item.transformerUnit ? " / " + item.transformerUnit.name : ""}
+                        </Text>
+                      </Space>
+                    </Radio>
                   ))}
-                </Row>
+                </Space>
               </Radio.Group>
             )}
-          </div>
-        </Space>
-      </Card>
+          </Card>
+        </Col>
 
-      {!selectedMeterId ? (
-        <Card>
-          <Empty description="Chọn một đồng hồ AUTO để xem realtime" />
-        </Card>
-      ) : (
-        <Row gutter={[16, 16]}>
-          <Col xs={24} lg={12}>
-            <Card
-              style={{ background: "#f8fafc", borderColor: "#dbe5f0" }}
-              styles={{ body: { padding: 20 } }}
-            >
-              <MeterFace
-                value={displayValue}
-                online={!!liveData}
-                label={(meter?.code || "") + " - " + (meter?.name || "")}
-              />
+        <Col xs={24} lg={16}>
+          {!selectedMeterId ? (
+            <Card>
+              <Empty description="Chọn một đồng hồ AUTO để xem realtime" />
             </Card>
-          </Col>
-          <Col xs={24} lg={12}>
+          ) : (
             <Space direction="vertical" size={16} style={{ width: "100%" }}>
-              <Card>
-                <Row gutter={16}>
-                  <Col span={12}>
-                    <Statistic
-                      title="Tổng kWh hiện tại"
-                      value={displayValue}
-                      precision={2}
-                      suffix="kWh"
-                      valueStyle={{ color: "#389e0d" }}
-                    />
-                  </Col>
-                  <Col span={12}>
-                    <Statistic
-                      title="Lần đọc gần nhất"
-                      value={
-                        liveData
-                          ? dayjs(liveData.timestamp).format("HH:mm:ss")
-                          : history[history.length - 1]
-                            ? dayjs(
-                                history[history.length - 1].timestamp,
-                              ).format("HH:mm:ss")
-                            : "---"
-                      }
-                    />
-                  </Col>
-                </Row>
-                {liveData ? (
-                  <Text type="secondary">
-                    Đã đọc lúc{" "}
-                    {dayjs(liveData.timestamp).format("DD/MM/YYYY HH:mm:ss")} -
-                    dữ liệu chỉ dùng realtime/biểu đồ, không dùng trực tiếp để
-                    tính tiền điện.
-                  </Text>
-                ) : (
-                  <Text type="secondary">
-                    Bấm &quot;Đọc realtime&quot; để lấy chỉ số mới nhất qua
-                    Gateway. Mỗi lần chỉ đọc một đồng hồ để tránh quá tải
-                    Gateway.
-                  </Text>
-                )}
+              <Card
+                loading={loading}
+                style={{ background: "#f8fafc", borderColor: "#dbe5f0" }}
+                styles={{ body: { padding: 20 } }}
+              >
+                <MeterFace
+                  value={displayValue}
+                  online={!!liveData}
+                  label={(meter?.code || "") + " - " + (meter?.name || "")}
+                />
               </Card>
-              <Card title="Xu hướng kWh gần đây" loading={historyLoading}>
-                <Sparkline values={history.map((item) => item.totalEnergy)} />
-              </Card>
+
               <Card size="small" title="Thông tin đồng hồ">
                 <Space direction="vertical" size={4}>
                   <Text>
@@ -3847,19 +3720,22 @@ export function ElectricLiveClient() {
                     - Slave ID <b>{meter?.modbusId}</b>
                   </Text>
                   <Text>
-                    Nhà máy: {meter?.transformer?.factory?.name || "---"} -
+                    Nhà máy: {meter?.factory?.name || meter?.transformer?.factory?.name || meter?.transformerUnit?.transformer?.factory?.name || "---"} -
                     Trạm: {meter?.transformer?.name || "---"}
                   </Text>
                   <Text>
                     Nhóm: {meter?.group?.name || "---"} - TU/TI: {meter?.tu} /{" "}
                     {meter?.ti}
                   </Text>
+                  <Text type="secondary">
+                    Lần đọc gần nhất: {liveData ? dayjs(liveData.timestamp).format("DD/MM/YYYY HH:mm:ss") : "---"}
+                  </Text>
                 </Space>
               </Card>
             </Space>
-          </Col>
-        </Row>
-      )}
+          )}
+        </Col>
+      </Row>
     </>
   );
 }

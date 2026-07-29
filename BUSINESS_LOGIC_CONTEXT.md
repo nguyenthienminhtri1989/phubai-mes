@@ -680,3 +680,17 @@ costAllocated(record) = consTotal(record) x rate(nha may)
 | Ngay | Thay doi | File chinh | Verify |
 | --- | --- | --- | --- |
 | 2026-07-29 | Doi UX trang realtime: Nha may/Tram bien ap thanh toggle, dong ho AUTO thanh radio list theo bo loc; giu doc mot dong ho/luc de tranh tai Gateway. | `src/components/electric/ElectricClients.tsx`, `BUSINESS_LOGIC_CONTEXT.md` | `npx eslint src/components/electric/ElectricClients.tsx`, `npm run build` |
+
+## 2026-07-29 - Electric live auto-read layout
+
+### Current State Update
+
+- Trang `/electric/live` bo nut `Doc realtime`; khi nguoi dung chon mot dong ho AUTO bang radio, UI tu goi `/api/electric/live?meterId=...` de lay ban doc moi nhat.
+- Trang realtime chi doc `PowerLiveReading` do collector da push len, khong ghi them `PowerTelemetry` va khong hien thi card lich su/xu huong telemetry tren man hinh nay.
+- Bo cuc realtime doi thanh 2 cot: danh sach dong ho AUTO ben trai co scroll, mat dong ho realtime ben phai, card `Thong tin dong ho` nam ngay ben duoi mat dong ho.
+
+### Feature Ledger Update
+
+| Ngay | Thay doi | File chinh | Verify |
+| --- | --- | --- | --- |
+| 2026-07-29 | Bo nut doc realtime thu cong, tu fetch live khi chon radio dong ho; sap lai layout thanh danh sach ben trai va mat dong ho + thong tin ben phai; bo card tong kWh va xu huong gan day. | `src/components/electric/ElectricClients.tsx`, `BUSINESS_LOGIC_CONTEXT.md` | `npx eslint src/components/electric/ElectricClients.tsx`, `npm run build` |
