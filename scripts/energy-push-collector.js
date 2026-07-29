@@ -171,13 +171,20 @@ async function readAllMeters(meters) {
             client.setID(meter.modbusId);
             const data = await client.readInputRegisters(meter.registerAddr || 0, 2);
             const totalEnergy = Number(parseSelecFloat(data.buffer, 0).toFixed(2));
+            // Doc them Total kW (register 14 / 0x0E) - cong suat tuc thoi
+            let power = null;
+            try {
+              const pwData = await client.readInputRegisters(14, 2);
+              power = Number(parseSelecFloat(pwData.buffer, 0).toFixed(2));
+            } catch { /* khong co power cung khong sao */ }
             readings.push({
               meterId: meter.id,
               totalEnergy,
+              power,
               readAt: new Date().toISOString(),
             });
             health.meterOk += 1;
-            console.log(`  + [${ip}:${port}] ${meter.code || meter.id} (ID ${meter.modbusId}): ${totalEnergy} kWh`);
+            console.log(`  + [${ip}:${port}] ${meter.code || meter.id} (ID ${meter.modbusId}): ${totalEnergy} kWh, ${power ?? '?'} kW`);
             await new Promise((r) => setTimeout(r, 50));
           } catch (err) {
             health.meterFailed += 1;

@@ -243,6 +243,7 @@ model CollectorHeartbeat {
 model PowerLiveReading {
   meterId     String     @id
   totalEnergy Float
+  power       Float?     // Total kW (cong suat tuc thoi) - register 30014/0x0E
   readAt      DateTime   @db.Timestamptz
   updatedAt   DateTime   @updatedAt
   meter       PowerMeter @relation(fields: [meterId], references: [id], onDelete: Cascade)

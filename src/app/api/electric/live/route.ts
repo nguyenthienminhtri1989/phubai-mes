@@ -58,14 +58,12 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // Giu dung cau truc LiveData ma ElectricClients.tsx mong doi.
-  // Collector hien chi day totalEnergy nen voltage/current/power tam thoi null.
   return NextResponse.json({
     timestamp: live.readAt,
     totalEnergy: live.totalEnergy,
     voltage: null,
     current: null,
-    power: null,
+    power: live.power ?? null,
     pf: null,
     meter,
   });

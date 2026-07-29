@@ -13,12 +13,14 @@ function hourBucket(ms: number) {
 type IncomingReading = {
   meterId?: unknown;
   totalEnergy?: unknown;
+  power?: unknown;
   readAt?: unknown;
 };
 
 type ParsedReading = {
   meterId: string;
   totalEnergy: number;
+  power: number | null;
   readAt: Date;
 };
 
@@ -194,7 +196,8 @@ export async function POST(request: NextRequest) {
     if (!meterId || !Number.isFinite(totalEnergy) || !readAt || Number.isNaN(readAt.getTime())) {
       continue;
     }
-    parsed.push({ meterId, totalEnergy, readAt });
+    const power = Number(r.power);
+    parsed.push({ meterId, totalEnergy, power: Number.isFinite(power) ? power : null, readAt });
   }
 
   if (parsed.length === 0) {
@@ -276,8 +279,8 @@ export async function POST(request: NextRequest) {
     liveUpserts.push(
       prisma.powerLiveReading.upsert({
         where: { meterId },
-        create: { meterId, totalEnergy: reading.totalEnergy, readAt: reading.readAt },
-        update: { totalEnergy: reading.totalEnergy, readAt: reading.readAt },
+        create: { meterId, totalEnergy: reading.totalEnergy, power: reading.power, readAt: reading.readAt },
+        update: { totalEnergy: reading.totalEnergy, power: reading.power, readAt: reading.readAt },
       }),
     );
   }
