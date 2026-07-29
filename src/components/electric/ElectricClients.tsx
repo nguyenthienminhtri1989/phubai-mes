@@ -2412,13 +2412,13 @@ export function ElectricDailyInputClient() {
     [meters, selectedGroup, modeFilter, keyword],
   );
 
-  const totalMeters = meters.length;
-  const doneMeters = meters.filter((meter) => meter.todayRecord).length;
+  const totalMeters = displayedMeters.length;
+  const doneMeters = displayedMeters.filter((meter) => meter.todayRecord).length;
   const pendingMeters = totalMeters - doneMeters;
-  const manualPending = meters.filter(
+  const manualPending = displayedMeters.filter(
     (meter) => !meter.isAuto && !meter.todayRecord,
   ).length;
-  const autoFallbackPending = meters.filter(
+  const autoFallbackPending = displayedMeters.filter(
     (meter) => meter.isAuto && !meter.todayRecord,
   ).length;
 

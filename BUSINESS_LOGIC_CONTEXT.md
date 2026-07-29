@@ -709,3 +709,16 @@ costAllocated(record) = consTotal(record) x rate(nha may)
 | Ngay | Thay doi | File chinh | Verify |
 | --- | --- | --- | --- |
 | 2026-07-29 | Giu mat dong ho va card thong tin dong ho render co dinh tren /electric/live, chi cap nhat gia tri khi chon radio; them guard chong response realtime cu ghi de. | `src/components/electric/ElectricClients.tsx`, `BUSINESS_LOGIC_CONTEXT.md` | `npx eslint src/components/electric/ElectricClients.tsx`, `npm run build` |
+
+
+## 2026-07-29 - Daily input visible meter count
+
+### Current State Update
+
+- Trang /electric/daily-input tinh cac card tong/chot/chua chot theo cung tap displayedMeters dang render trong bang ha the. API /api/electric/daily-status van co the tra ca dong ho trung the, nhung dong ho type=2 duoc an khoi bang daily-input vi da nhap o trang trung the rieng, nen card khong duoc dem kem tap bi an.
+
+### Feature Ledger Update
+
+| Ngay | Thay doi | File chinh | Verify |
+| --- | --- | --- | --- |
+| 2026-07-29 | Sua so lieu card tren /electric/daily-input de dem theo danh sach dong ho ha the dang hien thi, tranh lech khi API tra them dong ho trung the bi an. | src/components/electric/ElectricClients.tsx, BUSINESS_LOGIC_CONTEXT.md | npx eslint src/components/electric/ElectricClients.tsx, npm run build |
