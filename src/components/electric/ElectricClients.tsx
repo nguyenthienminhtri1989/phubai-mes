@@ -409,7 +409,10 @@ const fmtNumber = new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 });
 const fmtMoney = new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 });
 // Dùng RIÊNG cho trang nhập liệu: KHÔNG ngăn cách hàng nghìn (để tránh nhầm lẫn
 // giữa dấu chấm và dấu phẩy giữa các máy khác nhau), chỉ giữ dấu thập phân.
-const fmtInput = new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2, useGrouping: false });
+const fmtInput = new Intl.NumberFormat("vi-VN", {
+  maximumFractionDigits: 2,
+  useGrouping: false,
+});
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
@@ -1203,8 +1206,7 @@ export function ElectricCatalogClient() {
                         width: 130,
                         align: "right",
                         render: (_: unknown, record: ElectricMeter) => {
-                          const factor =
-                            (record.tu || 1) * (record.ti || 1);
+                          const factor = (record.tu || 1) * (record.ti || 1);
                           return factor > 1 ? (
                             <Tag color="gold">
                               ×{factor} (TU {record.tu} / TI {record.ti})
@@ -1301,7 +1303,9 @@ export function ElectricCatalogClient() {
                             <span>
                               {record.ipAddress}:{record.port}
                             </span>
-                            <Tag color={record.port === 502 ? "blue" : "purple"}>
+                            <Tag
+                              color={record.port === 502 ? "blue" : "purple"}
+                            >
                               {record.port === 502
                                 ? "COM1"
                                 : record.port === 503
@@ -1681,12 +1685,20 @@ export function ElectricCatalogClient() {
           />
           <Row gutter={12}>
             <Col xs={24} md={12}>
-              <Form.Item name="code" label="Mã Gateway" rules={[{ required: true }]}>
+              <Form.Item
+                name="code"
+                label="Mã Gateway"
+                rules={[{ required: true }]}
+              >
                 <Input placeholder="GW-XUONG-A-COM1" />
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>
-              <Form.Item name="name" label="Tên Gateway" rules={[{ required: true }]}>
+              <Form.Item
+                name="name"
+                label="Tên Gateway"
+                rules={[{ required: true }]}
+              >
                 <Input placeholder="N520 xưởng A - COM1" />
               </Form.Item>
             </Col>
@@ -2172,7 +2184,8 @@ function getCurrentConsumption(meter: ElectricMeter, draft?: DailyDraft) {
   if (meter.todayRecord) return Number(meter.todayRecord.consTotal || 0);
   if (meter.type === 2) return null;
   const evaluation = evaluateDraft(meter, draft);
-  if (evaluation.status === "empty" || evaluation.status === "error") return null;
+  if (evaluation.status === "empty" || evaluation.status === "error")
+    return null;
   return evaluation.cons;
 }
 
@@ -2296,7 +2309,9 @@ export function ElectricDailyInputClient() {
           setSelectedFactory((prev) => {
             if (prev) return prev; // user đã chọn rồi thì không đổi
             if (userFactoryIds.length > 0) {
-              const own = activeFactories.find((f) => userFactoryIds.includes(f.id));
+              const own = activeFactories.find((f) =>
+                userFactoryIds.includes(f.id),
+              );
               if (own) return own.id;
             }
             return activeFactories[0]?.id;
@@ -2413,7 +2428,9 @@ export function ElectricDailyInputClient() {
   );
 
   const totalMeters = displayedMeters.length;
-  const doneMeters = displayedMeters.filter((meter) => meter.todayRecord).length;
+  const doneMeters = displayedMeters.filter(
+    (meter) => meter.todayRecord,
+  ).length;
   const pendingMeters = totalMeters - doneMeters;
   const manualPending = displayedMeters.filter(
     (meter) => !meter.isAuto && !meter.todayRecord,
@@ -2684,9 +2701,12 @@ export function ElectricDailyInputClient() {
         }
         .ant-segmented .ant-segmented-item {
           color: #475569; /* chữ xám đậm cho chip không chọn - rõ hơn đen nhạt mặc định */
-          transition: color 0.2s, background 0.2s;
+          transition:
+            color 0.2s,
+            background 0.2s;
         }
-        .ant-segmented .ant-segmented-item:hover:not(.ant-segmented-item-selected) {
+        .ant-segmented
+          .ant-segmented-item:hover:not(.ant-segmented-item-selected) {
           color: #1677ff;
           background: rgba(22, 119, 255, 0.08);
         }
@@ -2729,7 +2749,10 @@ export function ElectricDailyInputClient() {
                 setSelectedTransformer(undefined);
                 setSelectedTransformerUnit(undefined);
               }}
-              options={factories.map((item) => ({ label: item.name, value: item.id }))}
+              options={factories.map((item) => ({
+                label: item.name,
+                value: item.id,
+              }))}
             />
           </Col>
           <Col xs={24} md={5}>
@@ -2754,12 +2777,17 @@ export function ElectricDailyInputClient() {
                 block
                 value={selectedTransformer ?? ""}
                 onChange={(value) => {
-                  setSelectedTransformer(value === "" ? undefined : String(value));
+                  setSelectedTransformer(
+                    value === "" ? undefined : String(value),
+                  );
                   setSelectedTransformerUnit(undefined);
                 }}
                 options={[
                   { label: "Tất cả trạm", value: "" },
-                  ...filteredTransformers.map((item) => ({ label: item.name, value: item.id })),
+                  ...filteredTransformers.map((item) => ({
+                    label: item.name,
+                    value: item.id,
+                  })),
                 ]}
               />
             </Col>
@@ -2877,14 +2905,16 @@ export function ElectricDailyInputClient() {
           }
         />
       )}
-      {autoFallbackPending > 0 && errorCount === 0 && selectedDate.isBefore(dayjs().startOf("day")) && (
-        <Alert
-          type="warning"
-          showIcon
-          style={{ marginBottom: 12 }}
-          message="Có đồng hồ AUTO chưa chốt cho ngày này. Nếu Gateway hoặc mạng lỗi, có thể nhập MANUAL tạm thời."
-        />
-      )}
+      {autoFallbackPending > 0 &&
+        errorCount === 0 &&
+        selectedDate.isBefore(dayjs().startOf("day")) && (
+          <Alert
+            type="warning"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message="Có đồng hồ AUTO chưa chốt cho ngày này. Nếu Gateway hoặc mạng lỗi, có thể nhập MANUAL tạm thời."
+          />
+        )}
 
       {canEditDaily && (
         <Card size="small" style={{ marginBottom: 12 }}>
@@ -3042,9 +3072,7 @@ export function ElectricDailyInputClient() {
                     <Text strong style={{ fontSize: 15, color: "#389e0d" }}>
                       {record.type === 2
                         ? fmtInput.format(Number(record.todayRecord.currTotal))
-                        : fmtInput.format(
-                            Number(record.todayRecord.currTotal),
-                          )}
+                        : fmtInput.format(Number(record.todayRecord.currTotal))}
                     </Text>
                     <Tag
                       color={
@@ -3151,9 +3179,7 @@ export function ElectricDailyInputClient() {
                   </Text>
                   <Text type="secondary" style={{ fontSize: 12 }}>
                     {record.lastRecord
-                      ? dayjs(record.lastRecord.recordDate).format(
-                          "DD/MM/YYYY",
-                        )
+                      ? dayjs(record.lastRecord.recordDate).format("DD/MM/YYYY")
                       : "Chưa có"}
                   </Text>
                 </Space>
@@ -3577,7 +3603,9 @@ export function ElectricLiveClient() {
   };
 
   const displayValue = liveData?.totalEnergy ?? 0;
-  const meterLabel = meter ? meter.code + " - " + meter.name : "Chưa chọn đồng hồ";
+  const meterLabel = meter
+    ? meter.code + " - " + meter.name
+    : "Chưa chọn đồng hồ";
   const factoryName =
     meter?.factory?.name ||
     meter?.transformer?.factory?.name ||
@@ -3598,7 +3626,8 @@ export function ElectricLiveClient() {
               <Segmented
                 value={filterFactoryId || "__all"}
                 onChange={(value) => {
-                  const nextValue = value === "__all" ? undefined : String(value);
+                  const nextValue =
+                    value === "__all" ? undefined : String(value);
                   setFilterFactoryId(nextValue);
                   setFilterTransformerId(undefined);
                   setFilterTransformerUnitId(undefined);
@@ -3615,7 +3644,8 @@ export function ElectricLiveClient() {
               <Segmented
                 value={filterTransformerId || "__all"}
                 onChange={(value) => {
-                  const nextValue = value === "__all" ? undefined : String(value);
+                  const nextValue =
+                    value === "__all" ? undefined : String(value);
                   setFilterTransformerId(nextValue);
                   setFilterTransformerUnitId(undefined);
                   selectMeter(undefined);
@@ -3671,7 +3701,9 @@ export function ElectricLiveClient() {
                 <Tag color="blue">{filteredMeters.length} đồng hồ</Tag>
               </Space>
             }
-            styles={{ body: { maxHeight: 560, overflowY: "auto", paddingRight: 12 } }}
+            styles={{
+              body: { maxHeight: 560, overflowY: "auto", paddingRight: 12 },
+            }}
           >
             {filteredMeters.length === 0 ? (
               <Empty
@@ -3686,12 +3718,20 @@ export function ElectricLiveClient() {
               >
                 <Space direction="vertical" size={10} style={{ width: "100%" }}>
                   {filteredMeters.map((item) => (
-                    <Radio key={item.id} value={item.id} style={{ width: "100%" }}>
+                    <Radio
+                      key={item.id}
+                      value={item.id}
+                      style={{ width: "100%" }}
+                    >
                       <Space direction="vertical" size={0}>
-                        <Text strong>{item.code} - {item.name}</Text>
+                        <Text strong>
+                          {item.code} - {item.name}
+                        </Text>
                         <Text type="secondary">
                           {item.transformer?.name || "Chưa gắn trạm"}
-                          {item.transformerUnit ? " / " + item.transformerUnit.name : ""}
+                          {item.transformerUnit
+                            ? " / " + item.transformerUnit.name
+                            : ""}
                         </Text>
                       </Space>
                     </Radio>
@@ -3711,7 +3751,8 @@ export function ElectricLiveClient() {
               <MeterFace
                 value={displayValue}
                 online={!!liveData}
-                label={meterLabel}
+                label={(meter?.code || "") + " - " + (meter?.name || "")}
+                power={liveData?.power ?? null}
               />
             </Card>
 
@@ -3725,14 +3766,18 @@ export function ElectricLiveClient() {
                   - Slave ID <b>{meter?.modbusId || "---"}</b>
                 </Text>
                 <Text>
-                  Nhà máy: {factoryName} - Trạm: {meter?.transformer?.name || "---"}
+                  Nhà máy: {factoryName} - Trạm:{" "}
+                  {meter?.transformer?.name || "---"}
                 </Text>
                 <Text>
-                  Nhóm: {meter?.group?.name || "---"} - TU/TI: {meter?.tu ?? "---"} /{" "}
-                  {meter?.ti ?? "---"}
+                  Nhóm: {meter?.group?.name || "---"} - TU/TI:{" "}
+                  {meter?.tu ?? "---"} / {meter?.ti ?? "---"}
                 </Text>
                 <Text type="secondary">
-                  Lần đọc gần nhất: {liveData ? dayjs(liveData.timestamp).format("DD/MM/YYYY HH:mm:ss") : "---"}
+                  Lần đọc gần nhất:{" "}
+                  {liveData
+                    ? dayjs(liveData.timestamp).format("DD/MM/YYYY HH:mm:ss")
+                    : "---"}
                 </Text>
               </Space>
             </Card>
@@ -4328,45 +4373,52 @@ export function ElectricReportsClient() {
             children: (
               <>
                 <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
-        <Col xs={24} md={12}>
-          <Card>
-            <Statistic
-              title="Điện tiêu thụ (đầu nguồn EVN)"
-              value={summary?.billedConsumption || 0}
-              precision={2}
-              suffix="kWh"
-              prefix={<ThunderboltOutlined />}
-            />
-            {trend != null ? (
-              <Text
-                type={trend >= 0 ? "danger" : "success"}
-                style={{ fontSize: 12 }}
-              >
-                {trend >= 0 ? <ArrowUpOutlined /> : <ArrowDownOutlined />}{" "}
-                {Math.abs(trend).toFixed(1)}% so với kỳ trước
-              </Text>
-            ) : (
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                Chưa có dữ liệu kỳ trước để so sánh
-              </Text>
-            )}
-          </Card>
-        </Col>
-        <Col xs={24} md={12}>
-          <Card>
-            <Statistic
-              title="Chi phí điện (hóa đơn EVN)"
-              value={summary?.billedCost || 0}
-              precision={0}
-              suffix="VNĐ"
-              prefix={<DollarOutlined />}
-            />
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              Đơn giá bình quân thực tế{" "}
-              {fmtMoney.format(Math.round(summary?.avgUnitPrice || 0))} đ/kWh
-            </Text>
-          </Card>
-        </Col>
+                  <Col xs={24} md={12}>
+                    <Card>
+                      <Statistic
+                        title="Điện tiêu thụ (đầu nguồn EVN)"
+                        value={summary?.billedConsumption || 0}
+                        precision={2}
+                        suffix="kWh"
+                        prefix={<ThunderboltOutlined />}
+                      />
+                      {trend != null ? (
+                        <Text
+                          type={trend >= 0 ? "danger" : "success"}
+                          style={{ fontSize: 12 }}
+                        >
+                          {trend >= 0 ? (
+                            <ArrowUpOutlined />
+                          ) : (
+                            <ArrowDownOutlined />
+                          )}{" "}
+                          {Math.abs(trend).toFixed(1)}% so với kỳ trước
+                        </Text>
+                      ) : (
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          Chưa có dữ liệu kỳ trước để so sánh
+                        </Text>
+                      )}
+                    </Card>
+                  </Col>
+                  <Col xs={24} md={12}>
+                    <Card>
+                      <Statistic
+                        title="Chi phí điện (hóa đơn EVN)"
+                        value={summary?.billedCost || 0}
+                        precision={0}
+                        suffix="VNĐ"
+                        prefix={<DollarOutlined />}
+                      />
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        Đơn giá bình quân thực tế{" "}
+                        {fmtMoney.format(
+                          Math.round(summary?.avgUnitPrice || 0),
+                        )}{" "}
+                        đ/kWh
+                      </Text>
+                    </Card>
+                  </Col>
                 </Row>
 
                 <Card
@@ -4409,90 +4461,96 @@ export function ElectricReportsClient() {
                   style={{ marginBottom: 16 }}
                   loading={loading}
                 >
-            <DonutChart
-              data={[
-                {
-                  label: "Bình thường",
-                  value: report?.summary.totalNormal || 0,
-                  color: "#1677ff",
-                },
-                {
-                  label: "Cao điểm",
-                  value: report?.summary.totalPeak || 0,
-                  color: "#f5222d",
-                },
-                {
-                  label: "Thấp điểm",
-                  value: report?.summary.totalOffPeak || 0,
-                  color: "#52c41a",
-                },
-              ]}
-            />
+                  <DonutChart
+                    data={[
+                      {
+                        label: "Bình thường",
+                        value: report?.summary.totalNormal || 0,
+                        color: "#1677ff",
+                      },
+                      {
+                        label: "Cao điểm",
+                        value: report?.summary.totalPeak || 0,
+                        color: "#f5222d",
+                      },
+                      {
+                        label: "Thấp điểm",
+                        value: report?.summary.totalOffPeak || 0,
+                        color: "#52c41a",
+                      },
+                    ]}
+                  />
                 </Card>
 
-      {topFactories.length > 1 ? (
-        <Card
-          title="So sánh tiêu thụ theo nhà máy"
-          style={{ marginBottom: 16 }}
-          loading={loading}
-        >
-          <RankedBarChart data={topFactories} />
-        </Card>
-      ) : null}
+                {topFactories.length > 1 ? (
+                  <Card
+                    title="So sánh tiêu thụ theo nhà máy"
+                    style={{ marginBottom: 16 }}
+                    loading={loading}
+                  >
+                    <RankedBarChart data={topFactories} />
+                  </Card>
+                ) : null}
 
-      <Card
-        title="Công tơ trung thế (hóa đơn EVN — 3 khung giá)"
-        style={{ marginBottom: 16 }}
-      >
-        <Table
-          rowKey="meterId"
-          loading={loading}
-          dataSource={report?.byMvMeter || []}
-          pagination={false}
-          scroll={{ x: true }}
-          columns={[
-            {
-              title: "Mã ĐH",
-              dataIndex: "meterCode",
-              render: (value: string) => <Tag color="volcano">{value}</Tag>,
-            },
-            { title: "Tên công tơ", dataIndex: "meterName" },
-            { title: "Nhà máy", dataIndex: "factoryName" },
-            {
-              title: "Bình thường",
-              dataIndex: "consNormal",
-              align: "right",
-              render: (value: number) => fmtNumber.format(value) + " kWh",
-            },
-            {
-              title: "Cao điểm",
-              dataIndex: "consPeak",
-              align: "right",
-              render: (value: number) => fmtNumber.format(value) + " kWh",
-            },
-            {
-              title: "Thấp điểm",
-              dataIndex: "consOffPeak",
-              align: "right",
-              render: (value: number) => fmtNumber.format(value) + " kWh",
-            },
-            {
-              title: "Tổng",
-              dataIndex: "consTotal",
-              align: "right",
-              render: (value: number) => fmtNumber.format(value) + " kWh",
-            },
-            {
-              title: "Thành tiền",
-              dataIndex: "costTotal",
-              align: "right",
-              render: (value: number) => (
-                <Text strong>{fmtMoney.format(value)} VNĐ</Text>
-              ),
-            },
-          ]}
-        />
-      </Card>
+                <Card
+                  title="Công tơ trung thế (hóa đơn EVN — 3 khung giá)"
+                  style={{ marginBottom: 16 }}
+                >
+                  <Table
+                    rowKey="meterId"
+                    loading={loading}
+                    dataSource={report?.byMvMeter || []}
+                    pagination={false}
+                    scroll={{ x: true }}
+                    columns={[
+                      {
+                        title: "Mã ĐH",
+                        dataIndex: "meterCode",
+                        render: (value: string) => (
+                          <Tag color="volcano">{value}</Tag>
+                        ),
+                      },
+                      { title: "Tên công tơ", dataIndex: "meterName" },
+                      { title: "Nhà máy", dataIndex: "factoryName" },
+                      {
+                        title: "Bình thường",
+                        dataIndex: "consNormal",
+                        align: "right",
+                        render: (value: number) =>
+                          fmtNumber.format(value) + " kWh",
+                      },
+                      {
+                        title: "Cao điểm",
+                        dataIndex: "consPeak",
+                        align: "right",
+                        render: (value: number) =>
+                          fmtNumber.format(value) + " kWh",
+                      },
+                      {
+                        title: "Thấp điểm",
+                        dataIndex: "consOffPeak",
+                        align: "right",
+                        render: (value: number) =>
+                          fmtNumber.format(value) + " kWh",
+                      },
+                      {
+                        title: "Tổng",
+                        dataIndex: "consTotal",
+                        align: "right",
+                        render: (value: number) =>
+                          fmtNumber.format(value) + " kWh",
+                      },
+                      {
+                        title: "Thành tiền",
+                        dataIndex: "costTotal",
+                        align: "right",
+                        render: (value: number) => (
+                          <Text strong>{fmtMoney.format(value)} VNĐ</Text>
+                        ),
+                      },
+                    ]}
+                  />
+                </Card>
               </>
             ),
           },
@@ -4502,109 +4560,117 @@ export function ElectricReportsClient() {
             children: (
               <>
                 <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
-        <Col xs={24} md={12}>
-          <Card>
-            <Statistic
-              title="Tổn thất & chưa đo được"
-              value={summary?.lossConsumption || 0}
-              precision={2}
-              suffix="kWh"
-              valueStyle={hasNegativeLoss ? { color: "#cf1322" } : undefined}
-              prefix={
-                hasNegativeLoss ? (
-                  <WarningOutlined style={{ color: "#cf1322" }} />
-                ) : (
-                  <ApiOutlined />
-                )
-              }
-            />
-            <Text
-              type={hasNegativeLoss ? "danger" : "secondary"}
-              style={{ fontSize: 12 }}
-            >
-              {hasNegativeLoss
-                ? "Hạ thế VƯỢT đầu nguồn — kiểm tra TU/TI hoặc số EVN"
-                : (summary?.lossPercent || 0).toFixed(1) +
-                  "% — nội bộ đo được " +
-                  fmtNumber.format(summary?.internalConsumption || 0) +
-                  " kWh"}
-            </Text>
-          </Card>
-        </Col>
-        <Col xs={24} md={12}>
-          <Card>
-            <Statistic
-              title="Nhánh hạ thế tốn điện nhất"
-              value={topConsumerShare}
-              precision={1}
-              suffix="% điện tiêu thụ EVN"
-              prefix={<FireOutlined style={{ color: "#fa541c" }} />}
-            />
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              {report?.byMeter[0]
-                ? report.byMeter[0].meterCode +
-                  " - " +
-                  report.byMeter[0].meterName
-                : "---"}
-            </Text>
-          </Card>
-        </Col>
+                  <Col xs={24} md={12}>
+                    <Card>
+                      <Statistic
+                        title="Tổn thất & chưa đo được"
+                        value={summary?.lossConsumption || 0}
+                        precision={2}
+                        suffix="kWh"
+                        valueStyle={
+                          hasNegativeLoss ? { color: "#cf1322" } : undefined
+                        }
+                        prefix={
+                          hasNegativeLoss ? (
+                            <WarningOutlined style={{ color: "#cf1322" }} />
+                          ) : (
+                            <ApiOutlined />
+                          )
+                        }
+                      />
+                      <Text
+                        type={hasNegativeLoss ? "danger" : "secondary"}
+                        style={{ fontSize: 12 }}
+                      >
+                        {hasNegativeLoss
+                          ? "Hạ thế VƯỢT đầu nguồn — kiểm tra TU/TI hoặc số EVN"
+                          : (summary?.lossPercent || 0).toFixed(1) +
+                            "% — nội bộ đo được " +
+                            fmtNumber.format(
+                              summary?.internalConsumption || 0,
+                            ) +
+                            " kWh"}
+                      </Text>
+                    </Card>
+                  </Col>
+                  <Col xs={24} md={12}>
+                    <Card>
+                      <Statistic
+                        title="Nhánh hạ thế tốn điện nhất"
+                        value={topConsumerShare}
+                        precision={1}
+                        suffix="% điện tiêu thụ EVN"
+                        prefix={<FireOutlined style={{ color: "#fa541c" }} />}
+                      />
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        {report?.byMeter[0]
+                          ? report.byMeter[0].meterCode +
+                            " - " +
+                            report.byMeter[0].meterName
+                          : "---"}
+                      </Text>
+                    </Card>
+                  </Col>
                 </Row>
 
-      <Card
-        title="Đối chiếu theo nhà máy: hóa đơn EVN vs đo đếm nội bộ"
-        style={{ marginBottom: 16 }}
-      >
-        <Table
-          rowKey={(record) => record.factoryId || record.factoryCode}
-          loading={loading}
-          dataSource={report?.byFactory || []}
-          pagination={false}
-          scroll={{ x: true }}
-          columns={[
-            { title: "Nhà máy", dataIndex: "factoryName" },
-            {
-              title: "Điện tiêu thụ EVN",
-              dataIndex: "billedCons",
-              align: "right",
-              render: (value: number) => fmtNumber.format(value) + " kWh",
-            },
-            {
-              title: "Chi phí EVN",
-              dataIndex: "billedCost",
-              align: "right",
-              render: (value: number) => fmtMoney.format(value) + " VNĐ",
-            },
-            {
-              title: "Hạ thế đo được",
-              dataIndex: "internalCons",
-              align: "right",
-              render: (value: number) => fmtNumber.format(value) + " kWh",
-            },
-            {
-              title: "Tổn thất",
-              dataIndex: "lossCons",
-              align: "right",
-              render: (
-                value: number,
-                record: NonNullable<ReportData["byFactory"]>[number],
-              ) => (
-                <Text type={value < 0 ? "danger" : undefined}>
-                  {fmtNumber.format(value)} kWh ({record.lossPercent.toFixed(1)}
-                  %)
-                </Text>
-              ),
-            },
-            {
-              title: "Đơn giá BQ",
-              dataIndex: "avgUnitPrice",
-              align: "right",
-              render: (value: number) =>
-                fmtMoney.format(Math.round(value)) + " đ/kWh",
-            },
-          ]}
-        />
-      </Card>
+                <Card
+                  title="Đối chiếu theo nhà máy: hóa đơn EVN vs đo đếm nội bộ"
+                  style={{ marginBottom: 16 }}
+                >
+                  <Table
+                    rowKey={(record) => record.factoryId || record.factoryCode}
+                    loading={loading}
+                    dataSource={report?.byFactory || []}
+                    pagination={false}
+                    scroll={{ x: true }}
+                    columns={[
+                      { title: "Nhà máy", dataIndex: "factoryName" },
+                      {
+                        title: "Điện tiêu thụ EVN",
+                        dataIndex: "billedCons",
+                        align: "right",
+                        render: (value: number) =>
+                          fmtNumber.format(value) + " kWh",
+                      },
+                      {
+                        title: "Chi phí EVN",
+                        dataIndex: "billedCost",
+                        align: "right",
+                        render: (value: number) =>
+                          fmtMoney.format(value) + " VNĐ",
+                      },
+                      {
+                        title: "Hạ thế đo được",
+                        dataIndex: "internalCons",
+                        align: "right",
+                        render: (value: number) =>
+                          fmtNumber.format(value) + " kWh",
+                      },
+                      {
+                        title: "Tổn thất",
+                        dataIndex: "lossCons",
+                        align: "right",
+                        render: (
+                          value: number,
+                          record: NonNullable<ReportData["byFactory"]>[number],
+                        ) => (
+                          <Text type={value < 0 ? "danger" : undefined}>
+                            {fmtNumber.format(value)} kWh (
+                            {record.lossPercent.toFixed(1)}
+                            %)
+                          </Text>
+                        ),
+                      },
+                      {
+                        title: "Đơn giá BQ",
+                        dataIndex: "avgUnitPrice",
+                        align: "right",
+                        render: (value: number) =>
+                          fmtMoney.format(Math.round(value)) + " đ/kWh",
+                      },
+                    ]}
+                  />
+                </Card>
 
                 <Card
                   title="Top nhánh hạ thế tiêu thụ nhiều nhất"
@@ -4614,101 +4680,111 @@ export function ElectricReportsClient() {
                   <RankedBarChart data={topMeters} />
                 </Card>
 
-      {summary && (summary.nonProductionCost > 0 || summary.nonProductionCons > 0) ? (
-        <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
-          <Col xs={24} md={12}>
-            <Card>
-              <Statistic
-                title="Chi phí sản xuất (đã phân bổ)"
-                value={summary.productionCost}
-                precision={0}
-                suffix="VNĐ"
-                prefix={<ThunderboltOutlined />}
-              />
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                {fmtNumber.format(summary.productionCons)} kWh
-              </Text>
-            </Card>
-          </Col>
-          <Col xs={24} md={12}>
-            <Card>
-              <Statistic
-                title="Chi phí ngoài sản xuất (văn phòng, chữa cháy...)"
-                value={summary.nonProductionCost}
-                precision={0}
-                suffix="VNĐ"
-                prefix={<ApiOutlined style={{ color: "#fa8c16" }} />}
-                valueStyle={{ color: "#fa8c16" }}
-              />
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                {fmtNumber.format(summary.nonProductionCons)} kWh — vẫn nằm trong
-                hóa đơn EVN, chỉ tách để hạch toán riêng
-              </Text>
-            </Card>
-          </Col>
-        </Row>
-      ) : null}
+                {summary &&
+                (summary.nonProductionCost > 0 ||
+                  summary.nonProductionCons > 0) ? (
+                  <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+                    <Col xs={24} md={12}>
+                      <Card>
+                        <Statistic
+                          title="Chi phí sản xuất (đã phân bổ)"
+                          value={summary.productionCost}
+                          precision={0}
+                          suffix="VNĐ"
+                          prefix={<ThunderboltOutlined />}
+                        />
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          {fmtNumber.format(summary.productionCons)} kWh
+                        </Text>
+                      </Card>
+                    </Col>
+                    <Col xs={24} md={12}>
+                      <Card>
+                        <Statistic
+                          title="Chi phí ngoài sản xuất (văn phòng, chữa cháy...)"
+                          value={summary.nonProductionCost}
+                          precision={0}
+                          suffix="VNĐ"
+                          prefix={<ApiOutlined style={{ color: "#fa8c16" }} />}
+                          valueStyle={{ color: "#fa8c16" }}
+                        />
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          {fmtNumber.format(summary.nonProductionCons)} kWh —
+                          vẫn nằm trong hóa đơn EVN, chỉ tách để hạch toán riêng
+                        </Text>
+                      </Card>
+                    </Col>
+                  </Row>
+                ) : null}
 
-      <Card title="Phân bổ nội bộ theo đồng hồ hạ thế">
-        <Alert
-          type="info"
-          showIcon
-          icon={<InfoCircleOutlined />}
-          style={{ marginBottom: 12 }}
-          message="Chi phí dưới đây được PHÂN BỔ từ hóa đơn EVN theo tỷ trọng kWh của từng đồng hồ, nên tổng lại luôn khớp hóa đơn. Cột “Tự tính” là số do chính đồng hồ tính ra — chỉ để đối chiếu, KHÔNG dùng để cộng tổng."
-        />
-        <Table
-          rowKey="meterId"
-          loading={loading}
-          dataSource={report?.byMeter || []}
-          scroll={{ x: true }}
-          columns={[
-            {
-              title: "Mã ĐH",
-              dataIndex: "meterCode",
-              render: (
-                value: string,
-                record: ReportData["byMeter"][number],
-              ) => (
-                <Space size={4}>
-                  <Tag color="blue">{value}</Tag>
-                  {record.isAuto ? <Tag color="green">AUTO</Tag> : null}
-                  {record.isNonProduction ? (
-                    <Tag color="orange">Ngoài SX</Tag>
-                  ) : null}
-                </Space>
-              ),
-            },
-            { title: "Tên đồng hồ", dataIndex: "meterName" },
-            { title: "Nhà máy", dataIndex: "factoryName" },
-            { title: "Trạm", dataIndex: "substationName" },
-            { title: "Máy biến áp", dataIndex: "transformerUnitName" },
-            { title: "Nhóm", dataIndex: "groupName" },
-            {
-              title: "Tiêu thụ",
-              dataIndex: "consTotal",
-              align: "right",
-              render: (value: number) => fmtNumber.format(value) + " kWh",
-            },
-            {
-              title: "Chi phí phân bổ",
-              dataIndex: "costTotal",
-              align: "right",
-              render: (value: number) => (
-                <Text strong>{fmtMoney.format(value)} VNĐ</Text>
-              ),
-            },
-            {
-              title: "Tự tính (đối chiếu)",
-              dataIndex: "costRaw",
-              align: "right",
-              render: (value: number) => (
-                <Text type="secondary">{fmtMoney.format(value)} VNĐ</Text>
-              ),
-            },
-          ]}
-        />
-      </Card>
+                <Card title="Phân bổ nội bộ theo đồng hồ hạ thế">
+                  <Alert
+                    type="info"
+                    showIcon
+                    icon={<InfoCircleOutlined />}
+                    style={{ marginBottom: 12 }}
+                    message="Chi phí dưới đây được PHÂN BỔ từ hóa đơn EVN theo tỷ trọng kWh của từng đồng hồ, nên tổng lại luôn khớp hóa đơn. Cột “Tự tính” là số do chính đồng hồ tính ra — chỉ để đối chiếu, KHÔNG dùng để cộng tổng."
+                  />
+                  <Table
+                    rowKey="meterId"
+                    loading={loading}
+                    dataSource={report?.byMeter || []}
+                    scroll={{ x: true }}
+                    columns={[
+                      {
+                        title: "Mã ĐH",
+                        dataIndex: "meterCode",
+                        render: (
+                          value: string,
+                          record: ReportData["byMeter"][number],
+                        ) => (
+                          <Space size={4}>
+                            <Tag color="blue">{value}</Tag>
+                            {record.isAuto ? (
+                              <Tag color="green">AUTO</Tag>
+                            ) : null}
+                            {record.isNonProduction ? (
+                              <Tag color="orange">Ngoài SX</Tag>
+                            ) : null}
+                          </Space>
+                        ),
+                      },
+                      { title: "Tên đồng hồ", dataIndex: "meterName" },
+                      { title: "Nhà máy", dataIndex: "factoryName" },
+                      { title: "Trạm", dataIndex: "substationName" },
+                      {
+                        title: "Máy biến áp",
+                        dataIndex: "transformerUnitName",
+                      },
+                      { title: "Nhóm", dataIndex: "groupName" },
+                      {
+                        title: "Tiêu thụ",
+                        dataIndex: "consTotal",
+                        align: "right",
+                        render: (value: number) =>
+                          fmtNumber.format(value) + " kWh",
+                      },
+                      {
+                        title: "Chi phí phân bổ",
+                        dataIndex: "costTotal",
+                        align: "right",
+                        render: (value: number) => (
+                          <Text strong>{fmtMoney.format(value)} VNĐ</Text>
+                        ),
+                      },
+                      {
+                        title: "Tự tính (đối chiếu)",
+                        dataIndex: "costRaw",
+                        align: "right",
+                        render: (value: number) => (
+                          <Text type="secondary">
+                            {fmtMoney.format(value)} VNĐ
+                          </Text>
+                        ),
+                      },
+                    ]}
+                  />
+                </Card>
               </>
             ),
           },
@@ -4863,7 +4939,11 @@ export function ElectricGatewayHealthClient() {
       <Card
         title="Tình trạng thu thập dữ liệu"
         extra={
-          <Button icon={<ReloadOutlined />} onClick={() => void load()} loading={loading}>
+          <Button
+            icon={<ReloadOutlined />}
+            onClick={() => void load()}
+            loading={loading}
+          >
             Làm mới
           </Button>
         }
@@ -4921,7 +5001,10 @@ export function ElectricGatewayHealthClient() {
                 collector ? `${collector.meterOk}/${collector.meterTotal}` : "-"
               }
               valueStyle={{
-                color: collector && collector.meterFailed > 0 ? "#d46b08" : undefined,
+                color:
+                  collector && collector.meterFailed > 0
+                    ? "#d46b08"
+                    : undefined,
               }}
             />
           </Col>
@@ -4930,7 +5013,8 @@ export function ElectricGatewayHealthClient() {
               title="Bản ghi tồn buffer"
               value={collector?.bufferedCount ?? 0}
               valueStyle={{
-                color: (collector?.bufferedCount ?? 0) > 0 ? "#d46b08" : undefined,
+                color:
+                  (collector?.bufferedCount ?? 0) > 0 ? "#d46b08" : undefined,
               }}
             />
             <Typography.Text type="secondary">
@@ -4952,7 +5036,9 @@ export function ElectricGatewayHealthClient() {
               render: (_: unknown, record: GatewayHealthRow) => (
                 <Space direction="vertical" size={0}>
                   <b>{record.name}</b>
-                  <Typography.Text type="secondary">{record.code}</Typography.Text>
+                  <Typography.Text type="secondary">
+                    {record.code}
+                  </Typography.Text>
                 </Space>
               ),
             },
@@ -4976,7 +5062,9 @@ export function ElectricGatewayHealthClient() {
             {
               title: "Vị trí",
               render: (_: unknown, record: GatewayHealthRow) =>
-                [record.factoryName, record.location].filter(Boolean).join(" — ") || "-",
+                [record.factoryName, record.location]
+                  .filter(Boolean)
+                  .join(" — ") || "-",
             },
             {
               title: "Trạng thái",
@@ -5001,7 +5089,8 @@ export function ElectricGatewayHealthClient() {
               render: (_: unknown, record: GatewayHealthRow) => (
                 <Space direction="vertical" size={0}>
                   <span>
-                    {record.meterOk}/{record.meterTotal || record.meterCount} đọc được
+                    {record.meterOk}/{record.meterTotal || record.meterCount}{" "}
+                    đọc được
                   </span>
                   {record.meterFailed > 0 && (
                     <Typography.Text type="danger" style={{ fontSize: 12 }}>
