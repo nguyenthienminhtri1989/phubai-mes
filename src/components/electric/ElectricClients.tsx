@@ -162,6 +162,7 @@ type ElectricMeter = {
   ti: number;
   sortOrder: number;
   isNonProduction?: boolean;
+  excludeFromTotal?: boolean;
   note?: string | null;
   factory?: Factory | null;
   gateway?: Gateway | null;
@@ -363,6 +364,7 @@ type ReportData = {
     meterType: number;
     isAuto: boolean;
     isNonProduction?: boolean;
+    excludedFromTotal?: boolean;
     factoryName?: string;
     groupName: string;
     substationName: string;
@@ -813,6 +815,16 @@ export function ElectricCatalogClient() {
       render: (_, record) => record.transformerUnit?.name || "---",
     },
     { title: "Nhóm", render: (_, record) => record.group?.name || "---" },
+    {
+      title: "Loại",
+      width: 100,
+      render: (_, record) => (
+        <Space size={4} direction="vertical">
+          {record.isNonProduction ? <Tag color="orange">Ngoài SX</Tag> : null}
+          {record.excludeFromTotal ? <Tag color="volcano">ĐH tổng</Tag> : null}
+        </Space>
+      ),
+    },
     {
       title: "Thao tác",
       width: 110,
@@ -2062,6 +2074,26 @@ export function ElectricCatalogClient() {
                   <Switch
                     checkedChildren="Ngoài SX"
                     unCheckedChildren="Sản xuất"
+                  />
+                </Form.Item>
+              )
+            }
+          </Form.Item>
+          <Form.Item
+            noStyle
+            shouldUpdate={(prev, next) => prev.type !== next.type}
+          >
+            {({ getFieldValue }) =>
+              getFieldValue("type") === 2 ? null : (
+                <Form.Item
+                  name="excludeFromTotal"
+                  label="Không tính vào tổng"
+                  valuePropName="checked"
+                  tooltip="Bật cho đồng hồ TỔNG (parent) đo trùm lên các đồng hồ con bên dưới. Dữ liệu vẫn thu thập bình thường nhưng báo cáo sẽ không cộng vào tổng tiêu thụ hạ thế (tránh đếm trùng)."
+                >
+                  <Switch
+                    checkedChildren="Bỏ qua"
+                    unCheckedChildren="Tính vào tổng"
                   />
                 </Form.Item>
               )
@@ -4742,6 +4774,9 @@ export function ElectricReportsClient() {
                             ) : null}
                             {record.isNonProduction ? (
                               <Tag color="orange">Ngoài SX</Tag>
+                            ) : null}
+                            {record.excludedFromTotal ? (
+                              <Tag color="volcano">ĐH tổng</Tag>
                             ) : null}
                           </Space>
                         ),

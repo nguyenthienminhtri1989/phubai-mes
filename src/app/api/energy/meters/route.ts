@@ -79,6 +79,9 @@ async function meterData(body: Record<string, unknown>) {
     // Chi dong ho Ha the (type=1) moi co khai niem San xuat/Ngoai san xuat.
     // Trung the (type=2) la cong to tong nen luon false.
     isNonProduction: meterType === 2 ? false : body.isNonProduction === true,
+    // Dong ho TONG (parent) do trum len cac dong ho con: du lieu van thu thap nhung bao cao
+    // KHONG cong vao tong ha the. Chi ap dung ha the; trung the von da tach rieng.
+    excludeFromTotal: meterType === 2 ? false : body.excludeFromTotal === true,
     note: toNullableString(body.note),
   };
 }

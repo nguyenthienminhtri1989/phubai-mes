@@ -147,6 +147,11 @@ model PowerMeter {
   // Van nam trong cong to EVN cua nha may nen VAN tham gia phan bo nguoc (giu trong mau so rate),
   // chi khac o cho bao cao gom chi phi thanh 2 nhom: San xuat / Ngoai san xuat.
   isNonProduction Boolean         @default(false)
+  // true = dong ho TONG (parent meter) do TRUM len cac dong ho con ben duoi.
+  // Du lieu van thu thap binh thuong (telemetry, PowerRecord, trend), nhung BAO CAO
+  // KHONG cong vao tong tieu thu ha the (tranh dem trung voi cac dong ho con).
+  // Chi ap dung cho dong ho ha the (type=1); dong ho trung the (type=2) von da tach rieng.
+  excludeFromTotal Boolean        @default(false)
   note          String?
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt

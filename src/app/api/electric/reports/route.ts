@@ -147,7 +147,13 @@ export async function GET(request: NextRequest) {
   const factoryKeyOf = (row: Row) => resolveFactory(row)?.id || NO_FACTORY;
 
   const mvRows = rows.filter((row) => row.meter.type === MV_TYPE);
-  const lvRows = rows.filter((row) => row.meter.type !== MV_TYPE);
+  // LV: TAT CA dong ho ha the (ke ca excludeFromTotal) de hien thi trong byMeter.
+  const lvRowsAll = rows.filter((row) => row.meter.type !== MV_TYPE);
+  // LV duoc tinh vao tong: CHI dong ho KHONG bi loai tru.
+  // Dong ho co excludeFromTotal = true la dong ho TONG (parent meter) do TRUM len cac dong ho
+  // con ben duoi -> neu cong vao se dem trung. Van thu thap du lieu binh thuong (trend, record)
+  // nhung KHONG tham gia vao tong tieu thu ha the, phan bo nguoc, hay tinh ton that.
+  const lvRows = lvRowsAll.filter((row) => !row.meter.excludeFromTotal);
 
   // --- Bước 1: gom hóa đơn EVN theo nhà máy ---------------------------------------------
   type MvBucket = {
@@ -249,9 +255,12 @@ export async function GET(request: NextRequest) {
     }
   >();
 
-  for (const row of lvRows) {
+  // byMeter hien thi TAT CA dong ho ha the (ke ca excludeFromTotal) de nguoi dung van thay.
+  // Dong ho bi exclude co `excludedFromTotal = true` trong response -> UI danh dau rieng.
+  for (const row of lvRowsAll) {
     const factory = resolveFactory(row);
-    const cost = allocatedCost(row);
+    // Chi phan bo chi phi cho dong ho KHONG bi exclude; dong ho exclude costTotal = 0.
+    const cost = row.meter.excludeFromTotal ? 0 : allocatedCost(row);
 
     const meterBucket =
       byMeterMap.get(row.meterId) || {
@@ -261,6 +270,7 @@ export async function GET(request: NextRequest) {
         meterType: row.meter.type,
         isAuto: row.meter.isAuto,
         isNonProduction: row.meter.isNonProduction,
+        excludedFromTotal: row.meter.excludeFromTotal,
         factoryId: factory?.id || null,
         factoryName: factory?.name || "Chưa gắn nhà máy",
         groupName: row.meter.group?.name || "Chưa phân nhóm",
@@ -275,18 +285,21 @@ export async function GET(request: NextRequest) {
     meterBucket.costRaw += row.costTotal;
     byMeterMap.set(row.meterId, meterBucket);
 
-    const groupKey = row.meter.groupId || "none";
-    const groupBucket =
-      byGroupMap.get(groupKey) || {
-        groupId: row.meter.groupId,
-        groupCode: row.meter.group?.code || "NONE",
-        groupName: row.meter.group?.name || "Chưa phân nhóm",
-        consTotal: 0,
-        costTotal: 0,
-      };
-    groupBucket.consTotal += row.consTotal;
-    groupBucket.costTotal += cost;
-    byGroupMap.set(groupKey, groupBucket);
+    // byGroup: CHI cong dong ho KHONG bi exclude vao nhom.
+    if (!row.meter.excludeFromTotal) {
+      const groupKey = row.meter.groupId || "none";
+      const groupBucket =
+        byGroupMap.get(groupKey) || {
+          groupId: row.meter.groupId,
+          groupCode: row.meter.group?.code || "NONE",
+          groupName: row.meter.group?.name || "Chưa phân nhóm",
+          consTotal: 0,
+          costTotal: 0,
+        };
+      groupBucket.consTotal += row.consTotal;
+      groupBucket.costTotal += cost;
+      byGroupMap.set(groupKey, groupBucket);
+    }
   }
 
   // byMvMeter: danh sách công tơ EVN + số tiền thật của từng cái.

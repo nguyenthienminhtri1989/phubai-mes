@@ -158,35 +158,42 @@ export async function GET(request: NextRequest) {
       billedKwh += kwh;
       emissionsKg += kg;
     } else {
-      internalKwh += kwh;
-      const groupKey = row.meter.groupId || "none";
-      const groupBucket =
-        byGroup.get(groupKey) ||
-        {
-          groupId: row.meter.groupId,
-          groupCode: row.meter.group?.code || "NONE",
-          groupName: row.meter.group?.name || "Chưa phân nhóm",
-          internalKwh: 0,
-          emissionsKg: 0,
-        };
-      groupBucket.internalKwh += kwh;
-      groupBucket.emissionsKg += kg;
-      byGroup.set(groupKey, groupBucket);
+      // Dong ho co excludeFromTotal = true la dong ho TONG, bo qua khi tinh tong noi bo
+      // de tranh dem trung voi cac dong ho con. Van hien thi trong byMeter nhung khong cong.
+      if (!row.meter.excludeFromTotal) {
+        internalKwh += kwh;
+      }
+      // byGroup va byMeter: chi cong dong ho KHONG bi exclude.
+      if (!row.meter.excludeFromTotal) {
+        const groupKey = row.meter.groupId || "none";
+        const groupBucket =
+          byGroup.get(groupKey) ||
+          {
+            groupId: row.meter.groupId,
+            groupCode: row.meter.group?.code || "NONE",
+            groupName: row.meter.group?.name || "Chưa phân nhóm",
+            internalKwh: 0,
+            emissionsKg: 0,
+          };
+        groupBucket.internalKwh += kwh;
+        groupBucket.emissionsKg += kg;
+        byGroup.set(groupKey, groupBucket);
 
-      const meterBucket =
-        byMeter.get(row.meterId) ||
-        {
-          meterId: row.meterId,
-          meterCode: row.meter.code,
-          meterName: row.meter.name,
-          groupName: row.meter.group?.name || "Chưa phân nhóm",
-          factoryName: factory?.name || "Chưa gắn nhà máy",
-          internalKwh: 0,
-          emissionsKg: 0,
-        };
-      meterBucket.internalKwh += kwh;
-      meterBucket.emissionsKg += kg;
-      byMeter.set(row.meterId, meterBucket);
+        const meterBucket =
+          byMeter.get(row.meterId) ||
+          {
+            meterId: row.meterId,
+            meterCode: row.meter.code,
+            meterName: row.meter.name,
+            groupName: row.meter.group?.name || "Chưa phân nhóm",
+            factoryName: factory?.name || "Chưa gắn nhà máy",
+            internalKwh: 0,
+            emissionsKg: 0,
+          };
+        meterBucket.internalKwh += kwh;
+        meterBucket.emissionsKg += kg;
+        byMeter.set(row.meterId, meterBucket);
+      }
     }
   }
 

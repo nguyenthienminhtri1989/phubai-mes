@@ -723,6 +723,36 @@ costAllocated(record) = consTotal(record) x rate(nha may)
 | --- | --- | --- | --- |
 | 2026-07-29 | Sua so lieu card tren /electric/daily-input de dem theo danh sach dong ho ha the dang hien thi, tranh lech khi API tra them dong ho trung the bi an. | src/components/electric/ElectricClients.tsx, BUSINESS_LOGIC_CONTEXT.md | npx eslint src/components/electric/ElectricClients.tsx, npm run build |
 
+## 2026-07-30 - Co excludeFromTotal chong dem trung dong ho tong/con ha the
+
+### Current State Update
+
+- Them `PowerMeter.excludeFromTotal` (Boolean, default false). Dong ho co co nay = true la dong ho TONG (parent meter) do TRUM len cac dong ho con ben duoi. Du lieu van thu thap binh thuong (telemetry, PowerRecord, trend, nhap tay), nhung bao cao/phan bo KHONG cong vao tong tieu thu ha the de tranh dem trung.
+- Migration `20260730090000_add_power_meter_exclude_from_total` them cot, mac dinh false nen dong ho cu khong bi anh huong.
+- `/api/electric/reports`: tach `lvRowsAll` (tat ca LV, de hien thi byMeter) va `lvRows` (chi LV khong bi exclude, de tinh tong/phan bo/ton that). `byMeter` tra them field `excludedFromTotal` de UI danh dau. `byGroup` chi cong dong ho khong bi exclude.
+- `/api/electric/carbon`: tuong tu, `internalKwh`, `byGroup`, `byMeter` chi cong dong ho khong bi exclude.
+- `/api/energy/meters` (POST/PUT): nhan `excludeFromTotal` tu body, chi ap dung cho type=1 (ha the); type=2 luon false.
+- Chi ap dung cho dong ho ha the (type=1); dong ho trung the (type=2) von da tach rieng trong bao cao nen khong can co nay.
+
+### Business Rules Update
+
+- **Dong ho TONG (excludeFromTotal = true):** van doc Modbus, van tao PowerRecord, van hien thi trend/chart/nhap tay, nhung cac con so tong hop sau KHONG tinh no vao:
+  - `internalConsumption` (tong tieu thu ha the)
+  - `rateByFactory` (don gia phan bo nguoc)
+  - `allocatedCost` (chi phi phan bo)
+  - `lossConsumption` (ton that = MV - sum LV)
+  - `byGroup` (tong theo nhom)
+  - `internalKwh` trong carbon
+- **Dong ho CON (excludeFromTotal = false, mac dinh):** tinh binh thuong nhu truoc.
+- **Kiem tra khi bat co:** nguoi dung can xac dinh dung dong ho nao la dong ho tong. Bat sai se lam mat san luong khoi bao cao. Bat dung se khac phuc tinh trang tong ha the vuot trung the (ton that am).
+- **Khong doi PowerRecord hay cong thuc tinh:** co nay chi anh huong TANG BAO CAO (report aggregation), khong thay doi cach ghi/tinh san luong cua tung dong ho.
+
+### Feature Ledger Update
+
+| Ngay | Thay doi | File chinh | Verify |
+| --- | --- | --- | --- |
+| 2026-07-30 | Them co `excludeFromTotal` cho PowerMeter de loai dong ho tong (parent) khoi tong tieu thu ha the, tranh dem trung voi dong ho con; cap nhat bao cao dien nang va carbon. | `prisma/schema.prisma`, `prisma/migrations/20260730090000_add_power_meter_exclude_from_total/migration.sql`, `src/app/api/electric/reports/route.ts`, `src/app/api/electric/carbon/route.ts`, `src/app/api/energy/meters/route.ts`, `BUSINESS_LOGIC_CONTEXT.md` | `npx prisma generate`, `npx prisma migrate dev --name add_power_meter_exclude_from_total`, `npm run build` |
+
 ## 2026-07-29 - Electric live transformer toggle labels
 
 ### Current State Update
