@@ -2765,9 +2765,11 @@ export function ElectricDailyInputClient() {
               onChange={(value) => value && setSelectedDate(value)}
               style={{ width: "100%" }}
               format="DD/MM/YYYY"
-              // Chỉ cho chọn từ hôm qua trở về quá khứ: ngày hôm nay và tương lai chưa kết thúc,
-              // chưa có đủ dữ liệu để chốt số.
-              disabledDate={(d) => !!d && !d.isBefore(dayjs().startOf("day"))}
+              // Cho phép chọn từ HÔM NAY trở về quá khứ. Tương lai (từ ngày mai) vẫn chặn.
+              // Lý do cho phép hôm nay: khi cron hoặc mini PC lỡ giờ 6h sáng (mất điện/mất mạng),
+              // cần nhập tay chỉ số 6h của chính hôm nay để chốt số của NGÀY HÔM QUA. Người
+              // vận hành tự chịu trách nhiệm nhập đúng số ở mốc 6h.
+              disabledDate={(d) => !!d && d.isAfter(dayjs().endOf("day"))}
             />
           </Col>
           <Col xs={24} md={13}>
