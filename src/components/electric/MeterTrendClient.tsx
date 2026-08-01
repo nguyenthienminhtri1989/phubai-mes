@@ -23,6 +23,9 @@ const { Text } = Typography;
 const LV_TYPE = 1; // Hạ thế
 
 type FactoryRef = { id: string; name: string };
+type GroupRef = { id: string; code: string; name: string };
+
+type ViewMode = "meter" | "group";
 
 interface MeterItem {
   id: string;
@@ -31,6 +34,8 @@ interface MeterItem {
   type: number;
   isActive: boolean;
   sortOrder: number;
+  groupId?: string | null;
+  group?: GroupRef | null;
   factory: FactoryRef | null;
   transformer: { id: string; name: string; factory: FactoryRef | null } | null;
 }
@@ -67,9 +72,11 @@ export function MeterTrendClient() {
   const [meters, setMeters] = useState<MeterItem[]>([]);
   const [loadingMeters, setLoadingMeters] = useState(false);
 
+  const [viewMode, setViewMode] = useState<ViewMode>("meter");
   const [factoryId, setFactoryId] = useState<string>();
   const [transformerId, setTransformerId] = useState<string>();
   const [meterIds, setMeterIds] = useState<string[]>([]);
+  const [groupId, setGroupId] = useState<string>();
 
   const [range, setRange] = useState<[Dayjs, Dayjs]>([
     dayjs().startOf("month"),
@@ -124,36 +131,60 @@ export function MeterTrendClient() {
       .map((m) => ({ value: m.id, label: `${m.code} — ${m.name}` }));
   }, [meters, factoryId, transformerId]);
 
+  // Danh sách nhóm lấy từ nhóm của các đồng hồ đang có, lọc theo nhà máy.
+  const groupOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const m of meters) {
+      if (!m.group) continue;
+      if (factoryId && resolveFactory(m)?.id !== factoryId) continue;
+      map.set(m.group.id, `${m.group.code} — ${m.group.name}`);
+    }
+    return Array.from(map, ([value, label]) => ({ value, label }));
+  }, [meters, factoryId]);
+
+  const onViewModeChange = (mode: ViewMode) => {
+    setViewMode(mode);
+    setMeterIds([]);
+    setGroupId(undefined);
+  };
+
   const onFactoryChange = (value?: string) => {
     setFactoryId(value);
     setTransformerId(undefined);
     setMeterIds([]);
+    setGroupId(undefined);
   };
   const onTransformerChange = (value?: string) => {
     setTransformerId(value);
     setMeterIds([]);
   };
 
+  const activeIds = viewMode === "group" ? (groupId ? [groupId] : []) : meterIds;
+
   const load = useCallback(() => {
-    if (meterIds.length === 0) {
+    if (activeIds.length === 0) {
       setData({ dates: [], series: [] });
       return;
     }
     setLoading(true);
     const params = new URLSearchParams({
-      meterIds: meterIds.join(","),
       from: range[0].format("YYYY-MM-DD"),
       to: range[1].format("YYYY-MM-DD"),
       groupBy,
     });
+    if (viewMode === "group") {
+      params.set("groupIds", groupId!);
+    } else {
+      params.set("meterIds", meterIds.join(","));
+    }
     fetch(`/api/electric/meter-trend?${params.toString()}`)
       .then((r) => r.json())
       .then((res: TrendResponse) => setData(res))
       .catch(() => setData({ dates: [], series: [] }))
       .finally(() => setLoading(false));
-  }, [meterIds, range, groupBy]);
+  }, [activeIds, range, groupBy, viewMode, groupId, meterIds]);
 
-  // Tự tải khi đổi đồng hồ / khoảng ngày / ngày-tháng.
+  // Tự tải khi đổi đồng hồ/nhóm / khoảng ngày / ngày-tháng.
   useEffect(() => {
     load();
   }, [load]);
@@ -184,6 +215,20 @@ export function MeterTrendClient() {
       <Space wrap style={{ marginBottom: 16 }} size="middle">
         <Space direction="vertical" size={2}>
           <Text type="secondary" style={{ fontSize: 12 }}>
+            Xem theo
+          </Text>
+          <Segmented
+            value={viewMode}
+            onChange={(v) => onViewModeChange(v as ViewMode)}
+            options={[
+              { label: "Đồng hồ", value: "meter" },
+              { label: "Nhóm", value: "group" },
+            ]}
+          />
+        </Space>
+
+        <Space direction="vertical" size={2}>
+          <Text type="secondary" style={{ fontSize: 12 }}>
             Nhà máy
           </Text>
           <Select
@@ -197,36 +242,56 @@ export function MeterTrendClient() {
           />
         </Space>
 
-        <Space direction="vertical" size={2}>
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            Trạm
-          </Text>
-          <Select
-            allowClear
-            placeholder="Tất cả trạm"
-            style={{ width: 180 }}
-            value={transformerId}
-            onChange={onTransformerChange}
-            options={transformerOptions}
-          />
-        </Space>
+        {viewMode === "meter" && (
+          <Space direction="vertical" size={2}>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              Trạm
+            </Text>
+            <Select
+              allowClear
+              placeholder="Tất cả trạm"
+              style={{ width: 180 }}
+              value={transformerId}
+              onChange={onTransformerChange}
+              options={transformerOptions}
+            />
+          </Space>
+        )}
 
-        <Space direction="vertical" size={2}>
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            Đồng hồ (chọn 1 hoặc nhiều)
-          </Text>
-          <Select
-            mode="multiple"
-            allowClear
-            placeholder="Chọn đồng hồ hạ thế..."
-            style={{ minWidth: 280, maxWidth: 460 }}
-            value={meterIds}
-            onChange={setMeterIds}
-            options={meterOptions}
-            maxTagCount="responsive"
-            optionFilterProp="label"
-          />
-        </Space>
+        {viewMode === "meter" ? (
+          <Space direction="vertical" size={2}>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              Đồng hồ (chọn 1 hoặc nhiều)
+            </Text>
+            <Select
+              mode="multiple"
+              allowClear
+              placeholder="Chọn đồng hồ hạ thế..."
+              style={{ minWidth: 280, maxWidth: 460 }}
+              value={meterIds}
+              onChange={setMeterIds}
+              options={meterOptions}
+              maxTagCount="responsive"
+              optionFilterProp="label"
+            />
+          </Space>
+        ) : (
+          <Space direction="vertical" size={2}>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              Nhóm
+            </Text>
+            <Select
+              allowClear
+              showSearch
+              placeholder="Chọn nhóm đồng hồ..."
+              style={{ minWidth: 220 }}
+              value={groupId}
+              onChange={setGroupId}
+              options={groupOptions}
+              optionFilterProp="label"
+            />
+          </Space>
+        )}
 
         <Space direction="vertical" size={2}>
           <Text type="secondary" style={{ fontSize: 12 }}>
@@ -270,11 +335,15 @@ export function MeterTrendClient() {
         </Space>
       </Space>
 
-      {meterIds.length === 0 ? (
+      {activeIds.length === 0 ? (
         <Alert
           type="info"
           showIcon
-          message="Chọn ít nhất một đồng hồ hạ thế để xem xu hướng tiêu thụ hàng ngày. Có thể chọn nhiều đồng hồ (ví dụ các đồng hồ của cụm điều hoà hoặc khí nén) để so sánh cùng lúc."
+          message={
+            viewMode === "group"
+              ? "Chọn ít nhất một nhóm đồng hồ để xem xu hướng tiêu thụ của cả nhóm. Mỗi nhóm gộp tổng kWh của tất cả đồng hồ trong nhóm."
+              : "Chọn ít nhất một đồng hồ hạ thế để xem xu hướng tiêu thụ hàng ngày. Có thể chọn nhiều đồng hồ để so sánh cùng lúc."
+          }
           style={{ marginBottom: 16 }}
         />
       ) : null}

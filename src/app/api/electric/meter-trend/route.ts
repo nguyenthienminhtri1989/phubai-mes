@@ -39,7 +39,76 @@ export async function GET(request: NextRequest) {
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
+  const groupIds = (searchParams.get("groupIds") || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 
+  // --- Chế độ NHÓM: gom kWh tất cả đồng hồ cùng nhóm thành 1 series ---
+  if (groupIds.length > 0) {
+    const groups = await prisma.powerMeterGroup.findMany({
+      where: { id: { in: groupIds } },
+      select: { id: true, code: true, name: true, sortOrder: true },
+      orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
+    });
+
+    const rows = await prisma.powerRecord.findMany({
+      where: {
+        meter: {
+          groupId: { in: groupIds },
+          type: 1, // chỉ hạ thế
+          excludeFromTotal: false,
+        },
+        recordDate:
+          startDate || endDate
+            ? {
+                gte: startDate ? vnDayStart(startDate) : undefined,
+                lt: endDate ? vnNextDayStart(endDate) : undefined,
+              }
+            : undefined,
+      },
+      select: {
+        recordDate: true,
+        consTotal: true,
+        meter: { select: { groupId: true } },
+      },
+      orderBy: [{ recordDate: "asc" }],
+    });
+
+    const dateSet = new Set<string>();
+    for (const r of rows) dateSet.add(dateKey(r.recordDate, groupBy));
+    const dates = Array.from(dateSet).sort();
+
+    // groupId -> (dateKey -> tổng kWh)
+    const valueMap = new Map<string, Map<string, number>>();
+    for (const r of rows) {
+      const gid = r.meter.groupId;
+      if (!gid) continue;
+      const key = dateKey(r.recordDate, groupBy);
+      let m = valueMap.get(gid);
+      if (!m) {
+        m = new Map<string, number>();
+        valueMap.set(gid, m);
+      }
+      m.set(key, (m.get(key) || 0) + r.consTotal);
+    }
+
+    const series = groups.map((g) => {
+      const vm = valueMap.get(g.id) || new Map<string, number>();
+      return {
+        meterId: g.id,
+        meterCode: g.code,
+        meterName: g.name,
+        points: dates.map((d) =>
+          vm.has(d) ? Number((vm.get(d) as number).toFixed(2)) : null,
+        ),
+      };
+    });
+
+    return NextResponse.json({ dates, series });
+  }
+
+  // --- Chế độ ĐỒNG HỒ (mặc định) ---
   if (meterIds.length === 0) {
     return NextResponse.json({ dates: [], series: [] });
   }
