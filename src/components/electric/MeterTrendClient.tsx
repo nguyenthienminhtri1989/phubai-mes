@@ -159,10 +159,11 @@ export function MeterTrendClient() {
     setMeterIds([]);
   };
 
-  const activeIds = viewMode === "group" ? (groupId ? [groupId] : []) : meterIds;
+  const hasSelection =
+    viewMode === "group" ? !!groupId : meterIds.length > 0;
 
   const load = useCallback(() => {
-    if (activeIds.length === 0) {
+    if (!hasSelection) {
       setData({ dates: [], series: [] });
       return;
     }
@@ -182,7 +183,11 @@ export function MeterTrendClient() {
       .then((res: TrendResponse) => setData(res))
       .catch(() => setData({ dates: [], series: [] }))
       .finally(() => setLoading(false));
-  }, [activeIds, range, groupBy, viewMode, groupId, meterIds]);
+    // hasSelection duoc suy ra tu (viewMode, groupId, meterIds) nen khong can
+    // liet ke rieng - de trong deps se lam useCallback tao lai moi render
+    // (array/ternary trong body luon co reference moi) -> vong lap vo han.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [range, groupBy, viewMode, groupId, meterIds]);
 
   // Tự tải khi đổi đồng hồ/nhóm / khoảng ngày / ngày-tháng.
   useEffect(() => {
@@ -335,7 +340,7 @@ export function MeterTrendClient() {
         </Space>
       </Space>
 
-      {activeIds.length === 0 ? (
+      {!hasSelection ? (
         <Alert
           type="info"
           showIcon
