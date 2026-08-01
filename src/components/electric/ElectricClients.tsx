@@ -4711,6 +4711,77 @@ export function ElectricReportsClient() {
                   <RankedBarChart data={topMeters} />
                 </Card>
 
+                {(report?.byGroup || []).length > 0 && (() => {
+                  const groupPalette = ["#1677ff", "#52c41a", "#faad14", "#f5222d", "#722ed1", "#13c2c2", "#eb2f96", "#a0d911", "#fa8c16", "#2f54eb"];
+                  const groupData = (report?.byGroup || []).map((g, i) => ({
+                    label: g.groupName,
+                    value: g.consTotal,
+                    color: groupPalette[i % groupPalette.length],
+                  }));
+                  const groupTotal = groupData.reduce((sum, d) => sum + d.value, 0);
+                  return (
+                    <Card
+                      title="Cơ cấu tiêu thụ hạ thế theo nhóm đồng hồ"
+                      style={{ marginBottom: 16 }}
+                      loading={loading}
+                    >
+                      <DonutChart data={groupData} />
+                      <Table
+                        rowKey="groupId"
+                        dataSource={report?.byGroup || []}
+                        pagination={false}
+                        style={{ marginTop: 16 }}
+                        scroll={{ x: true }}
+                        columns={[
+                          {
+                            title: "Nhóm",
+                            dataIndex: "groupName",
+                            render: (value: string, _record: NonNullable<ReportData["byGroup"]>[number], index: number) => (
+                              <Space>
+                                <span
+                                  style={{
+                                    width: 10,
+                                    height: 10,
+                                    borderRadius: 2,
+                                    background: groupPalette[index % groupPalette.length],
+                                    display: "inline-block",
+                                  }}
+                                />
+                                <b>{value}</b>
+                              </Space>
+                            ),
+                          },
+                          {
+                            title: "Tiêu thụ",
+                            dataIndex: "consTotal",
+                            align: "right" as const,
+                            render: (value: number) =>
+                              fmtNumber.format(value) + " kWh",
+                          },
+                          {
+                            key: "percent",
+                            title: "Tỷ trọng",
+                            dataIndex: "consTotal",
+                            align: "right" as const,
+                            render: (value: number) =>
+                              groupTotal > 0
+                                ? ((value / groupTotal) * 100).toFixed(1) + "%"
+                                : "---",
+                          },
+                          {
+                            title: "Chi phí phân bổ",
+                            dataIndex: "costTotal",
+                            align: "right" as const,
+                            render: (value: number) => (
+                              <Text strong>{fmtMoney.format(value)} VNĐ</Text>
+                            ),
+                          },
+                        ]}
+                      />
+                    </Card>
+                  );
+                })()}
+
                 {summary &&
                 (summary.nonProductionCost > 0 ||
                   summary.nonProductionCons > 0) ? (
