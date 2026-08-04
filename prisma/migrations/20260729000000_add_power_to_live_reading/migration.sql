@@ -1,0 +1,1 @@
+ALTER TABLE "PowerLiveReading" ADD COLUMN "power" DOUBLE PRECISION;
