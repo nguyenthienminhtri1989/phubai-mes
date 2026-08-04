@@ -412,10 +412,16 @@ async function closeDailyRecords() {
     console.log(`[Chot so] ${meter.code}: ${consTotal.toFixed(2)} kWh${splitInfo}, ${costTotal.toLocaleString("vi-VN")} VND`);
   }
 
-  const sixMonthsAgo = new Date();
-  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-  const deletedData = await pool.query('delete from "PowerTelemetry" where "timestamp" < $1', [sixMonthsAgo]);
-  console.log(`[Don dep] Da xoa ${deletedData.rowCount} telemetry cu hon 6 thang.`);
+  // Telemetry la DU LIEU THO (so luy ke doc tu dong ho). Sau khi load-profile-rollup.js da
+  // tinh xong duong cong phu tai (PowerLoadProfile, giu 3 nam) thi so tho khong con gia tri
+  // -> giu 90 ngay la du bien an toan: rollup chay hang ngay luc 06:30, tre 1 ngay, con 89
+  // ngay du phong neu rollup hong ma chua ai phat hien.
+  // Luu y: doi telemetry sang moc 30 phut lam so dong x2, nen 90 ngay x2 van NHE HON
+  // 180 ngay x1 truoc day.
+  const telemetryCutoff = new Date();
+  telemetryCutoff.setDate(telemetryCutoff.getDate() - 90);
+  const deletedData = await pool.query('delete from "PowerTelemetry" where "timestamp" < $1', [telemetryCutoff]);
+  console.log(`[Don dep] Da xoa ${deletedData.rowCount} telemetry cu hon 90 ngay.`);
 
   // Cos phi chi phuc vu theo doi xu huong ngan han (thay tu bu kip thoi), khong dung tinh tien
   // -> giu 35 ngay la du xem 1 thang gan nhat, khong can luu lau.

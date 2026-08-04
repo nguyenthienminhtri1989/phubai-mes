@@ -2,12 +2,23 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireCollectorKey } from "@/lib/collector-auth";
 import { prisma } from "@/lib/prisma";
 
-// Telemetry lich su lay theo MOC GIO TRON: chi luu ban doc DAU TIEN cua moi gio
-// (vd ~08:00, ~09:00...), khong phinh bang du collector doc day moi 60s.
-// Moc gio tinh bang UTC; vi gio VN lech UTC dung 7 tieng chan nen moc gio tron UTC
-// trung khop moc gio tron VN.
-function hourBucket(ms: number) {
-  return Math.floor(ms / 3_600_000);
+// Telemetry lich su lay theo MOC 30 PHUT: chi luu ban doc DAU TIEN cua moi khoang
+// (vd ~08:00, ~08:30, ~09:00...), khong phinh bang du collector doc day moi 60s.
+//
+// VI SAO 30 PHUT (truoc day la 60): day la do phan giai chuan nganh dien de tinh CONG SUAT
+// DINH (demand). EVN tinh cong suat theo trung binh 30 phut - mot cu khoi dong motor vot len
+// 2 giay khong duoc tinh la dinh, muc tai duy tri moi duoc tinh. Doc van moi 60s nhu cu,
+// chi doi quy tac LUU thua hon.
+//
+// Loi phu: `splitTelemetryByTariff` trong energy-cron.js tach khung gia TOU chinh xac gap doi
+// (moc 22:00 / 04:00 duoc cat sat hon).
+//
+// Moc tinh bang UTC; vi gio VN lech UTC dung 7 tieng chan nen moc 30 phut tron UTC
+// trung khop moc 30 phut tron VN.
+const BUCKET_MS = 1_800_000; // 30 phut
+
+function timeBucket(ms: number) {
+  return Math.floor(ms / BUCKET_MS);
 }
 
 type IncomingReading = {
@@ -166,7 +177,7 @@ async function saveHeartbeat(raw: unknown) {
 // POST /api/collector/ingest
 // Body: { readings: [...], gateways?: [...], collector?: {...} }
 // - Cap nhat ban doc moi nhat (PowerLiveReading) cho realtime.
-// - Ghi telemetry lich su theo gio (timestamp = readAt, KHONG dung now() de buffer gui tre van dung moc).
+// - Ghi telemetry lich su theo moc 30 phut (timestamp = readAt, KHONG dung now() de buffer gui tre van dung moc).
 // - Ghi suc khoe tung bus gateway + nhip tim collector (2 truong sau la optional -> tuong thich
 //   nguoc voi collector ban cu chi gui `readings`).
 export async function POST(request: NextRequest) {
@@ -222,7 +233,7 @@ export async function POST(request: NextRequest) {
   });
   const validMeters = new Set(existingMeters.map((m) => m.id));
 
-  // Moc gio tron cua telemetry gan nhat hien co cua tung dong ho.
+  // Moc 30 phut cua telemetry gan nhat hien co cua tung dong ho.
   const lastTelemetry = await prisma.powerTelemetry.groupBy({
     by: ["meterId"],
     where: { meterId: { in: meterIds } },
@@ -230,7 +241,7 @@ export async function POST(request: NextRequest) {
   });
   const lastTelemetryBucket = new Map<string, number>();
   for (const row of lastTelemetry) {
-    if (row._max.timestamp) lastTelemetryBucket.set(row.meterId, hourBucket(row._max.timestamp.getTime()));
+    if (row._max.timestamp) lastTelemetryBucket.set(row.meterId, timeBucket(row._max.timestamp.getTime()));
   }
 
   // Moc live hien co de khong de ban doc cu dan len ban doc moi hon.
@@ -245,9 +256,9 @@ export async function POST(request: NextRequest) {
 
   // Gom truoc, ghi DB theo lo de moi POST khong bi keo dai khi nhieu dong ho:
   //  - live: chi giu ban doc MOI NHAT cua moi dong ho (parsed da sap tang dan nen ban cuoi la moi nhat).
-  //  - telemetry: chi ban doc DAU TIEN cua moi gio tron, gom vao mang roi createMany.
+  //  - telemetry: chi ban doc DAU TIEN cua moi moc 30 phut, gom vao mang roi createMany.
   const newestLive = new Map<string, ParsedReading>();
-  const telemetryRows: { meterId: string; totalEnergy: number; timestamp: Date }[] = [];
+  const telemetryRows: { meterId: string; totalEnergy: number; power: number | null; timestamp: Date }[] = [];
 
   for (const reading of parsed) {
     if (!validMeters.has(reading.meterId)) {
@@ -258,13 +269,17 @@ export async function POST(request: NextRequest) {
     // 1) Ban doc moi nhat cho realtime (ghi de vi parsed tang dan theo thoi gian).
     newestLive.set(reading.meterId, reading);
 
-    // 2) Telemetry lich su theo gio tron.
-    const readBucket = hourBucket(reading.readAt.getTime());
+    // 2) Telemetry lich su theo moc 30 phut.
+    // Ghi ca `power` (kW tuc thoi): truoc day cot nay bi bo quen nen luon NULL du collector
+    // van gui len. Khong dung de tinh cong suat dinh (dinh tinh tu ΔkWh/Δt moi dung chuan
+    // nganh dien), nhung huu ich de soi cu vot khi khoi dong motor.
+    const readBucket = timeBucket(reading.readAt.getTime());
     const lastBucket = lastTelemetryBucket.get(reading.meterId);
     if (lastBucket === undefined || readBucket > lastBucket) {
       telemetryRows.push({
         meterId: reading.meterId,
         totalEnergy: reading.totalEnergy,
+        power: reading.power,
         timestamp: reading.readAt,
       });
       lastTelemetryBucket.set(reading.meterId, readBucket);

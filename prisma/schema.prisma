@@ -51,6 +51,7 @@ model Factory {
   meters        PowerMeter[]
   gateways      Gateway[]
   userScopes    UserFactoryScope[]
+  monthlyPeaks  PowerPeakMonthly[]
 
   @@index([isActive])
 }
@@ -162,6 +163,7 @@ model PowerMeter {
   transformerUnit PowerTransformerUnit? @relation(fields: [transformerUnitId], references: [id], onDelete: SetNull)
   records       PowerRecord[]
   telemetry     PowerTelemetry[]
+  loadProfiles  PowerLoadProfile[]
   powerFactors  PowerFactorLog[]
   liveReading   PowerLiveReading?
 
@@ -254,6 +256,78 @@ model PowerLiveReading {
   meter       PowerMeter @relation(fields: [meterId], references: [id], onDelete: Cascade)
 
   @@index([readAt])
+}
+
+// Duong cong phu tai theo khoang 30 phut, MUC DONG HO. Chi dong ho HA THE AUTO (type=1,
+// isAuto=true) moi co - dong ho trung the chi co 1 so/ngay tu portal EVN nen khong dung duoc.
+//
+// DAY LA SAN PHAM, KHONG PHAI DU LIEU THO. PowerTelemetry (so luy ke doc tu dong ho) chi giu
+// 90 ngay roi xoa; bang nay giu 3 NAM vi no la thu tra loi duoc "dang phu tai thang 10 nam
+// ngoai the nao", "sau khi doi may nen sang ca dem thi duong cong co phang ra khong" - nhung
+// cau hoi ma PowerPeakMonthly (chi 1 con so/thang) khong tra loi duoc.
+//
+// LUU `kwh` CHU KHONG CHI LUU `avgKw`: kWh la dai luong CONG DUOC (bao toan), nen gop nhieu
+// khoang / nhieu dong ho luon dung. kW trung binh khong cong duoc. Nho vay sau nay doi do phan
+// giai (30 -> 15 phut) hoac nen du lieu cu lai theo ngay deu khong phai sua gi.
+//
+// KHONG denormalize groupId (trong khi CO denormalize factoryId): nha may la SU THAT LICH SU
+// (dien do da thuc su tieu thu tai do), con nhom la LANG KINH PHAN TICH nguoi dung se cat lai
+// theo nhu cau. Dong bang groupId vao tung dong se lam bao cao cu va moi mau thuan nhau khi
+// nhom duoc sap xep lai - join toi PowerMeter.groupId luc query thi luon nhat quan.
+model PowerLoadProfile {
+  id            String     @id @default(cuid())
+  meterId       String
+  factoryId     String? // dong bang tai thoi diem rollup (lich su), KHONG doi khi dong ho chuyen nha may
+  intervalStart DateTime   @db.Timestamptz // moc dau khoang 30 phut (bien 30 phut UTC trung bien VN vi lech dung 7h)
+  minutes       Float // so phut THUC TE co du lieu trong khoang nay (co the < 30 neu thieu)
+  kwh           Float // tieu thu trong khoang, DA nhan tu/ti
+  avgKw         Float // = kwh / (minutes/60). Dan xuat, luu san de query khoi tinh lai
+  // Do dai khoang doc GOC sinh ra dong nay (khoang cach 2 lan doc telemetry lien tiep).
+  // 30 = du lieu 30 phut chuan. 60 = du lieu cu backfill tu telemetry theo gio. Lon hon = co gap.
+  // Chi dung de HIEN THI do tin cay, KHONG dung de loai bo: vi avgKw luon chia cho `minutes`
+  // THUC TE nen khoang bi keo dai chi lam DINH BI LAM PHANG (uoc luong thap), khong bao gio
+  // tao dinh gia. Uoc luong thap la sai so an toan.
+  srcGapMin     Float
+  createdAt     DateTime   @default(now())
+  meter         PowerMeter @relation(fields: [meterId], references: [id], onDelete: Cascade)
+
+  @@unique([meterId, intervalStart]) // idempotent: chay lai rollup bao nhieu lan cung an toan
+  @@index([factoryId, intervalStart]) // duong cong 1 nha may trong 1 khoang thoi gian (query chinh)
+  @@index([intervalStart]) // don du lieu qua 3 nam
+}
+
+// Chot dinh cong suat theo THANG + NHA MAY. Rat nho (~36 dong/nam) -> giu VINH VIEN,
+// tra loi duoc "ca nam qua thang nao dinh cao nhat" ke ca sau khi duong cong 3 nam da bi don.
+//
+// DINH CUA TONG != TONG CAC DINH: phai CONG tat ca dong ho theo tung khoang 30 phut TRUOC,
+// roi moi lay max cua chuoi tong. Nhanh A dinh luc 10:00, nhanh B dinh luc 15:00 - cong hai
+// so dinh rieng le lai se ra con so KHONG BAO GIO TON TAI trong thuc te.
+model PowerPeakMonthly {
+  id            String   @id @default(cuid())
+  factoryId     String
+  year          Int
+  month         Int // 1-12, theo thang lich Viet Nam
+  peakKw        Float // cong suat trung binh 30 phut cao nhat trong thang
+  peakAt        DateTime @db.Timestamptz // dung khoang 30 phut xay ra dinh (hoa nhau -> lay khoang SOM hon)
+  peakSrcGapMin Float // do phan giai cua du lieu tai dung moc dinh (30 = chuan, 60 = du lieu cu)
+  totalKwh      Float // tong tieu thu ca thang cua nha may
+  // = totalKwh / (peakKw * so gio trong thang). Do "phang" cua phu tai, chi so DAT GIA NHAT
+  // cho muc dich cat dinh: 0.85 = chay deu, it du dia tiet kiem; 0.45 = co nhung cu nho cao
+  // ngan -> DAY chinh la cho tiet kiem duoc tien.
+  loadFactor    Float
+  // Snapshot tung dong ho gop bao nhieu kW tai DUNG khoanh khac dinh, sap xep giam dan.
+  // Khong co cai nay thi biet KHI NAO dinh nhung khong biet CAT CAI GI - ma cat cai gi
+  // moi la muc dich cuoi cung.
+  contributions Json?
+  meterCount    Int // so dong ho bao cao tai moc dinh
+  intervalCount Int // so khoang du du lieu trong thang (danh gia do tin cay cua ket qua)
+  isMonthClosed Boolean  @default(false) // false = thang dang chay, con tinh lai moi ngay
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  factory       Factory  @relation(fields: [factoryId], references: [id], onDelete: Cascade)
+
+  @@unique([factoryId, year, month])
+  @@index([year, month]) // so sanh cac nha may trong cung ky
 }
 
 model ElectricityPrice {

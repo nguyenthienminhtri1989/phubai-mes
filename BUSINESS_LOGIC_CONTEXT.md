@@ -764,3 +764,60 @@ costAllocated(record) = consTotal(record) x rate(nha may)
 | Ngay | Thay doi | File chinh | Verify |
 | --- | --- | --- | --- |
 | 2026-07-29 | Doi nhan toggle loc Tram bien ap tren /electric/live tu "ten nha may - ten tram" sang chi "ten tram". | src/components/electric/ElectricClients.tsx, BUSINESS_LOGIC_CONTEXT.md | npx eslint src/components/electric/ElectricClients.tsx |
+
+## 2026-08-03 - Duong cong phu tai 30 phut + cong suat dinh thang (peak shaving)
+
+### Current State Update
+
+- Telemetry doi tu moc GIO TRON sang moc 30 PHUT (`BUCKET_MS = 1_800_000` trong `src/app/api/collector/ingest/route.ts`). Collector VAN doc moi 60s nhu cu, chi doi quy tac LUU. Loi phu: `splitTelemetryByTariff` tach khung gia TOU chinh xac gap doi.
+- Sua bug ton dong: `PowerTelemetry.power` truoc day LUON NULL vi endpoint ingest bo quen field khi push vao `telemetryRows`, du collector van gui `power` len va van ghi duoc vao `PowerLiveReading`. Nay da ghi ca vao telemetry.
+- Retention `PowerTelemetry` giam tu 6 thang xuong **90 ngay** (`scripts/energy-cron.js`). Du lieu tho khong con gia tri sau khi duong cong da duoc tinh. Vi doi sang 30 phut lam so dong x2, nen 90 ngay x2 van NHE HON 180 ngay x1 truoc day.
+- Them model `PowerLoadProfile`: duong cong phu tai muc DONG HO, khoang 30 phut, giu **3 nam**.
+- Them model `PowerPeakMonthly`: chot dinh cong suat theo THANG + NHA MAY, giu **vinh vien** (~36 dong/nam).
+- Them `scripts/load-profile-rollup.js`: tien trinh RIENG, crontab **06:30** gio VN (sau chot so 06:15). Khong dung vao `energy-cron.js` -> hong cai nay khong keo sap chot so.
+
+### Business Rules Update
+
+**Cong suat dinh tinh tu ΔkWh, KHONG tinh tu kW tuc thoi.**
+Cong suat tuc thoi (register 14) la gia tri tai mot khoanh khac - mot cu khoi dong motor vot len 2 giay se bi hieu nham la dinh. Chuan nganh dien (va cach EVN tinh tien) la cong suat TRUNG BINH 30 PHUT: `avgKw = ΔkWh / Δt(gio)`. Field `PowerTelemetry.power` chi de soi cu vot khi khoi dong, KHONG dung tinh dinh.
+
+**DINH CUA TONG != TONG CAC DINH.**
+Nhanh A dinh luc 10:00, nhanh B dinh luc 15:00 - cong hai so dinh rieng le lai se ra con so KHONG BAO GIO TON TAI. Thu tu bat buoc: CONG tat ca dong ho theo tung khoang 30 phut TRUOC (`group by intervalStart`), ROI MOI lay max cua chuoi tong. Day cung la ly do `PowerLoadProfile` phai luu chuoi theo khoang chu khong the chi luu dinh cua tung dong ho.
+
+**Rai san luong theo Δt THUC TE, khong gia dinh 30 phut.**
+Neu collector chet 2 gio, hai ban doc cach nhau 2h. Lay ΔkWh chia cho 0.5h se ra cong suat cao GAP 4 -> dinh gia chiem luon ngoi dinh thang. Chia cho Δt thuc te thi dinh chi bi LAM PHANG (uoc luong thap) - sai so an toan. Khoang cach > `MAX_SPAN_MIN = 180` phut thi BO HAN, de lai lo hong nhin thay duoc thay vi bia duong cong.
+
+**Dieu kien duoc xet lam DINH thang:**
+- `minutes >= 25` (khoang thieu phut cho uoc luong nhieu)
+- `meterCount == fullMeterCount` cua thang do (khoang thieu dong ho cong thieu -> tuong tai thap). `fullMeterCount` TU HIEU CHINH = so dong ho bao cao dong nhat trong thang, khong khai bao cung.
+- Hoa nhau -> lay khoang SOM HON. Phai co quy tac ro rang, neu khong moi lan chay lai ra ket qua khac nhau.
+
+**Luu `kwh` chu khong chi luu `avgKw`.** kWh la dai luong BAO TOAN (cong duoc), kW trung binh thi khong. Nho vay doi do phan giai (30 -> 15 phut) hoac nen du lieu cu theo ngay deu khong phai sua gi.
+
+**Denormalize `factoryId` NHUNG KHONG denormalize `groupId`.** Nha may la SU THAT LICH SU (dien do da thuc su tieu thu tai do) -> dong bang. Nhom la LANG KINH PHAN TICH nguoi dung se cat lai theo nhu cau -> join toi `PowerMeter.groupId` luc query, neu khong bao cao cu va moi se mau thuan khi nhom duoc sap xep lai. `excludeFromTotal` cung loc LUC QUERY vi cung ly do.
+
+**Chi dong ho HA THE AUTO (`type=1`, `isAuto=true`) moi co duong cong phu tai.** Dong ho trung the (type=2) chi co 1 so/ngay luc 06:00 tu portal EVN. Do do duong cong = tong cac NHANH ha the, KHONG phai so tren cong to EVN - hai con so nay lech nhau (ton hao, nhanh chua gan dong ho), phai noi ro tren giao dien.
+
+**Load factor** = `mean(kW eligible) / peakKw`. Chi so dat gia nhat cho peak shaving: 0.85 = chay deu, it du dia tiet kiem; 0.45 = co nhung cu nho cao ngan -> DAY chinh la cho tiet kiem duoc tien.
+
+**`contributions` (JSON)** = snapshot dong ho nao gop bao nhieu kW tai DUNG khoanh khac dinh. Khong co no thi biet KHI NAO dinh nhung khong biet CAT CAI GI.
+
+### Van hanh
+
+- Crontab VPS: `30 6 * * * cd /home/deploy/apps/phubai-mes && /usr/bin/node scripts/load-profile-rollup.js >> logs/load-profile.log 2>&1`
+- Mac dinh chay **2 ngay** gan nhat (khong phai 1): khoang vat qua nua dem chi tinh du khi da co ban doc ngay hom sau -> chay lai hom truoc de sua khoang bien. Tu chua lanh.
+- Backfill: `node scripts/load-profile-rollup.js --backfill-all`. Du lieu telemetry theo GIO cu van dung duoc, chi khac `srcGapMin = 60` (do phan giai tho hon nhung khong sai) -> co lich su ngay tu ngay dau, khong phai cho 6 thang.
+- `--status` de xem tinh trang; `--from/--to` de tinh lai khi phat hien sai cong thuc. LUON UPSERT nen chay lai bao nhieu lan cung an toan.
+- `warnIfStale()`: exit code 3 + log CANH BAO neu duong cong moi nhat da >= 7 ngay truoc. Quan trong vi telemetry chi giu 90 ngay - rollup hong am tham qua lau se lam mat du lieu tho VINH VIEN truoc khi kip tinh.
+
+### Feature Ledger Update
+
+| Ngay | Thay doi | File chinh | Verify |
+| --- | --- | --- | --- |
+| 2026-08-03 | Them duong cong phu tai 30 phut (`PowerLoadProfile`, giu 3 nam) va chot cong suat dinh thang (`PowerPeakMonthly`, giu vinh vien) phuc vu peak shaving. Doi telemetry tu moc gio sang moc 30 phut, sua bug `PowerTelemetry.power` luon NULL, giam retention telemetry 6 thang -> 90 ngay. Them script rollup rieng chay 06:30. | `prisma/schema.prisma`, `scripts/load-profile-rollup.js`, `src/app/api/collector/ingest/route.ts`, `scripts/energy-cron.js`, `BUSINESS_LOGIC_CONTEXT.md` | `npx prisma migrate dev --name add_power_load_profile_and_peak_monthly`, `npx prisma generate`, `node --check scripts/load-profile-rollup.js`, `node scripts/load-profile-rollup.js --status` |
+
+### Open Decisions
+
+- Giao dien bao cao phu tai (tab moi tren `/electric/reports` hoac trang rieng) chua lam - se lam sau khi backfill xong va da kiem chung so lieu.
+- Chua co canh bao Telegram "cong suat dang tien gan dinh thang truoc". Ha tang da san sang: doc `PowerLiveReading` cong lai so voi `PowerPeakMonthly`. Day moi la luc peak shaving thanh HANH DONG thay vi chi la bao cao.
+- Chua kiem tra portal CSKH EVN co endpoint bieu do phu tai theo gio khong (de co duong cong dung theo so EVN thay vi tong cac nhanh ha the).
