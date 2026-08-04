@@ -19,6 +19,7 @@ import {
   TeamOutlined,
   ThunderboltFilled,
   ThunderboltOutlined,
+  AreaChartOutlined,
   UserOutlined,
 } from "@ant-design/icons";
 import {
@@ -106,6 +107,10 @@ const pageTitle: Record<string, { label: string; icon: ReactNode }> = {
     label: "Xu hướng đồng hồ",
     icon: <LineChartOutlined />,
   },
+  "/electric/load-profile": {
+    label: "Phụ tải & công suất đỉnh",
+    icon: <AreaChartOutlined />,
+  },
   "/electric/power-factor": {
     label: "Hệ số cos φ",
     icon: <BulbOutlined />,
@@ -173,6 +178,11 @@ function buildMenuItems(role?: string): MenuProps["items"] {
           key: "/electric/meter-trend",
           icon: <LineChartOutlined />,
           label: "Xu hướng tăng giảm",
+        },
+        {
+          key: "/electric/load-profile",
+          icon: <AreaChartOutlined />,
+          label: "Phụ tải & công suất đỉnh",
         },
         {
           key: "/electric/power-factor",

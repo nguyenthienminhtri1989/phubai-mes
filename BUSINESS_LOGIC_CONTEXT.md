@@ -821,3 +821,56 @@ Neu collector chet 2 gio, hai ban doc cach nhau 2h. Lay ΔkWh chia cho 0.5h se r
 - Giao dien bao cao phu tai (tab moi tren `/electric/reports` hoac trang rieng) chua lam - se lam sau khi backfill xong va da kiem chung so lieu.
 - Chua co canh bao Telegram "cong suat dang tien gan dinh thang truoc". Ha tang da san sang: doc `PowerLiveReading` cong lai so voi `PowerPeakMonthly`. Day moi la luc peak shaving thanh HANH DONG thay vi chi la bao cao.
 - Chua kiem tra portal CSKH EVN co endpoint bieu do phu tai theo gio khong (de co duong cong dung theo so EVN thay vi tong cac nhanh ha the).
+
+## 2026-08-04 - Xu ly dut chuoi do + trang bao cao phu tai
+
+### Current State Update
+
+- Them model `PowerMeterEvent`: nhat ky su kien DUT CHUOI DO (RESET_DOWN / JUMP_UP / GAP / REPLACED). Giu vinh vien, rat nho. Ghi boi ca `energy-cron.js` (source=daily-close) va `load-profile-rollup.js` (source=rollup).
+- Trang moi `/electric/load-profile` (Phu tai & cong suat dinh) - trang RIENG, khong nhet vao `/electric/reports` vi `ElectricClients.tsx` da ~5000 dong va bai toan khac han (don vi kW thay vi kWh, truc thoi gian 30 phut thay vi ngay/thang):
+  - `src/app/api/electric/load-profile/route.ts`
+  - `src/components/electric/LoadProfileClient.tsx`
+  - `src/components/electric/LoadProfileCharts.tsx` (LoadHeatmap, DayLoadCurve, MonthlyPeakChart)
+  - Menu: them muc "Phu tai & cong suat dinh" trong `AdminLayout.tsx`
+- Them `scripts/diag-load-profile.js`, `scripts/diag-suspect-records.js`, `scripts/reset-electric-data.js`.
+
+### Business Rules Update
+
+**DUT CHUOI DO la MOT khai niem, khong phai hai truong hop roi rac.**
+Khi trao dong ho, so luy ke thiet bi MOI khong lien quan gi thiet bi CU. Co the THAP hon / ve 0 (dong ho moi tinh), CAO hon (dong ho da dung noi khac), hoac tinh co GAN BANG (nguy hiem nhat - khong phat hien duoc). Hieu so vat qua diem dut la VO NGHIA (hieu cua HAI THIET BI KHAC NHAU), khong phai "sai mot chut".
+
+Truoc day he thong chi biet khai niem "reset" (`currTotal < prevTotal`) nen cu nhay LEN lot thang. Thuc te 2026-08-01: DP1 nhay tu 49.943 len 520.208 -> 470.265 kWh gia vao `PowerRecord`, va 470.257 kW gia vao dinh thang (LF tut con 0,02).
+
+**Hai nguong khac nhau cho hai boi canh, deu TU HIEU CHINH:**
+- **Chot so ngay** (`detectDiscontinuity` trong energy-cron.js): GIOI HAN VAT LY `capacityKva * 24` kWh/ngay. Chi co 1 mau/ngay, dong ho moi lap chua co lich su -> khong dung duoc thong ke. Gioi han vat ly dung ngay tu ngay dau lap dat. Fallback 100.000 kWh/ngay neu chua khai bao MBA.
+- **Rollup phu tai** (`distributeIntoBuckets`): TRUNG VI cua chinh dong ho do x20 (san 200 kW, tran cung 20.000 kW). Co hang tram mau/ngay nen thong ke dang tin va nhay hon nhieu. PHAI dung trung vi chu khong dung trung binh: mot gia tri rac 470.000 kW du suc keo trung binh len den muc chinh no lai lot qua nguong.
+
+Ca hai deu khong dung hang so cung -> nha may mo rong phu tai hay lap them MBA khong phai sua code.
+
+**`isReset` mo rong ngu nghia** thanh "chuoi so gian doan - chua tinh tieu thu", bat CA HAI chieu. Giu nguyen ten cot (khong can migration), nguyen nhan cu the nam o `note`.
+
+**Rollup XOA ROI DUNG LAI thay vi chi upsert.** Neu lan chay truoc ghi ra mot khoang ma logic moi loai bo (vd cap so rac vua bi chan), upsert se KHONG dung toi dong cu -> so sai nam lai vinh vien. Xoa-roi-dung lam rollup thuc su la nguon su that cho khoang no xu ly, va cho phep sua so cu bang cach chay lai.
+
+**Noi long dieu kien xet DINH tu 100% xuong 80% do phu dong ho** (`PEAK_COVERAGE_RATIO`). Khoang thieu dong ho chi lam CONG THIEU -> uoc luong THAP -> tu nhien khong thang khi chon max, tuc noi long la chieu AN TOAN. Doi du 100% thi thuc te chi con 62 khoang hop le trong thang 7 thay vi ~1400 (23 dong ho nhung nhieu nhat chi 19 cai cung bao cao).
+
+**Bieu do so sanh dinh cac thang CHI hien khi da chon 1 nha may cu the.** Cong dinh cua nhieu nha may lai la SAI (moi nha may dat dinh vao thoi diem khac nhau).
+
+### Van hanh
+
+- Du lieu thu nghiem 2026-07-11 -> 2026-08-04 da bi XOA (giai doan lap thu, dong ho hong/trao doi lien tuc nen chuoi so khong nhat quan). Bat dau lai tu nen da co du bo chan.
+- `node scripts/reset-electric-data.js` - MAC DINH dry-run, phai them `--yes` moi xoa. Chi xoa du lieu ha the AUTO, GIU du lieu trung the (so doi chieu hoa don EVN). Muon xoa ca thi `--scope all`.
+- `node scripts/diag-load-profile.js` - chan doan chat luong du lieu (mat do telemetry, phan bo gap, top kW, do phu dong ho, dinh muc MBA).
+- `node scripts/diag-suspect-records.js` - do ban ghi PowerRecord vuot gioi han vat ly, sinh san cau UPDATE goi y. CHI DOC, khong tu sua: khong the doan duoc tieu thu THUC TE cua ngay bi dut chuoi, chi nguoi van hanh moi quyet dinh duoc.
+
+### Feature Ledger Update
+
+| Ngay | Thay doi | File chinh | Verify |
+| --- | --- | --- | --- |
+| 2026-08-04 | Xu ly dut chuoi do ca 2 chieu (thay dong ho: so moi thap hon/ve 0 HOAC cao bat thuong). Them `PowerMeterEvent` lam nhat ky su kien. Rollup xoa-roi-dung-lai. Noi long do phu dong ho xet dinh xuong 80%. | `prisma/schema.prisma`, `scripts/energy-cron.js`, `scripts/load-profile-rollup.js` | `npx prisma migrate dev --name add_power_meter_event`, `node --check scripts/*.js`, `node scripts/diag-suspect-records.js` |
+| 2026-08-04 | Trang bao cao phu tai `/electric/load-profile`: heatmap ngay x khung gio, duong cong ngay, bang dong ho gop vao dinh, so sanh dinh cac thang, nhat ky su kien dut chuoi. | `src/app/api/electric/load-profile/route.ts`, `src/components/electric/LoadProfileClient.tsx`, `src/components/electric/LoadProfileCharts.tsx`, `src/components/AdminLayout.tsx` | `npm run build`, mo `/electric/load-profile` |
+
+### Open Decisions (cap nhat)
+
+- Chua co form khai bao THU CONG "da thay dong ho ngay X, chi so cat Y". Bang `PowerMeterEvent` da co san `kind=REPLACED` + `source=manual` cho viec nay. Can thiet vi truong hop dong ho moi TINH CO co chi so gan bang dong ho cu thi KHONG the phat hien tu dong.
+- Chua co canh bao Telegram "cong suat dang tien gan dinh thang truoc" (doc `PowerLiveReading` cong lai so voi `PowerPeakMonthly`). Day moi la luc peak shaving thanh HANH DONG thay vi chi la bao cao.
+- Chua kiem tra portal CSKH EVN co endpoint bieu do phu tai theo gio khong.
