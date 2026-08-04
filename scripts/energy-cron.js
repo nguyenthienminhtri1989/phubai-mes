@@ -170,15 +170,105 @@ function safeClose(client) {
   });
 }
 
+// ============================================================
+// PHAT HIEN DUT CHUOI DO (thay dong ho / reset / doc Modbus sai)
+//
+// Khi trao dong ho, so luy ke cua thiet bi MOI khong lien quan gi den thiet bi CU:
+// co the THAP hon hoac ve 0 (dong ho moi tinh), hoac CAO hon (dong ho da dung noi khac).
+// Ca hai deu la CUNG MOT su kien - chuoi do bi dut - va hieu so vat qua diem dut la
+// VO NGHIA (hieu cua hai thiet bi khac nhau), khong phai "sai mot chut".
+//
+// Truoc day chi bat chieu XUONG nen cu nhay LEN lot thang vao bao cao.
+// ============================================================
+
+// Neu chua biet cong suat may bien ap thi dung tran nay (kWh/ngay) lam chan cuoi.
+// 100.000 kWh/ngay ~ 4.100 kW chay lien tuc 24h - vuot xa moi nhanh ha the thuc te,
+// nhung van du chat de bat cac cu nhay hang tram nghin nhu ca DP1.
+const FALLBACK_MAX_DAILY_KWH = 100_000;
+
+/**
+ * Tra ve null neu chi so binh thuong, hoac { kind, note, threshold, impliedKw } neu dut chuoi.
+ *
+ * GIOI HAN VAT LY thay cho nguong thong ke: o chot so chi co 1 mau/ngay, dong ho moi lap
+ * thi chua co lich su de lay trung vi. Nhung mot dong ho sau may bien ap X kVA thi KHONG THE
+ * tieu thu qua X * 24 kWh mot ngay - gioi han nay dung ngay tu ngay dau lap dat, khong can
+ * cho tich luy du lieu.
+ */
+function detectDiscontinuity(meter, prevTotal, currTotal) {
+  if (currTotal < prevTotal) {
+    return {
+      kind: "RESET_DOWN",
+      threshold: null,
+      impliedKw: null,
+      note: "Nghi reset/thay đồng hồ (chỉ số mới < kỳ trước) - chưa tính tiêu thụ, cần kiểm tra & nhập tay",
+    };
+  }
+
+  const tu = Number(meter.tu ?? 1) || 1;
+  const ti = Number(meter.ti ?? 1) || 1;
+  const consTotal = (currTotal - prevTotal) * tu * ti;
+
+  const capacityKva = Number(meter.capacityKva ?? 0);
+  const maxDailyKwh = capacityKva > 0 ? capacityKva * 24 : FALLBACK_MAX_DAILY_KWH;
+
+  if (consTotal > maxDailyKwh) {
+    return {
+      kind: "JUMP_UP",
+      threshold: maxDailyKwh,
+      impliedKw: consTotal / 24,
+      note:
+        `Nghi thay đồng hồ (chỉ số mới cao bất thường): ${Math.round(consTotal)} kWh/ngày ` +
+        `vượt giới hạn vật lý ${Math.round(maxDailyKwh)} kWh` +
+        (capacityKva > 0 ? ` (MBA ${capacityKva} kVA)` : " (chưa khai báo công suất MBA)") +
+        " - chưa tính tiêu thụ, cần kiểm tra & nhập tay",
+    };
+  }
+
+  return null;
+}
+
+/** Ghi su kien dut chuoi. Idempotent nho unique key - chay lai cron khong nhan doi. */
+async function logMeterEvent(meterId, occurredAt, kind, source, data = {}) {
+  await pool.query(
+    `insert into "PowerMeterEvent"
+       ("id", "meterId", "occurredAt", "kind", "source", "prevTotal", "currTotal",
+        "impliedKw", "threshold", "note", "acknowledged", "createdAt")
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, false, now())
+     on conflict ("meterId", "occurredAt", "kind") do update set
+       "prevTotal" = excluded."prevTotal",
+       "currTotal" = excluded."currTotal",
+       "impliedKw" = excluded."impliedKw",
+       "threshold" = excluded."threshold",
+       "note"      = excluded."note"`,
+    [
+      newId("evt"),
+      meterId,
+      occurredAt,
+      kind,
+      source,
+      data.prevTotal ?? null,
+      data.currTotal ?? null,
+      data.impliedKw ?? null,
+      data.threshold ?? null,
+      data.note ?? null,
+    ],
+  );
+}
+
 async function getAutoMeters(requireConnection = false) {
   const connectionFilter = requireConnection
-    ? 'and "modbusId" is not null and "gatewayIp" is not null'
+    ? 'and m."modbusId" is not null and m."gatewayIp" is not null'
     : "";
+  // capacityKva cua may bien ap duoc keo theo de lam GIOI HAN VAT LY khi kiem tra chi so
+  // bat thuong (xem detectDiscontinuity). Cot nay khong dung trong luong doc Modbus.
   const result = await pool.query(
-    `select "id", "code", "name", "isActive", "isAuto", "type", "modbusId", "gatewayIp", "gatewayPort", "registerAddr", "tu", "ti"
-     from "PowerMeter"
-     where "isActive" = true and "isAuto" = true ${connectionFilter}
-     order by "gatewayIp" asc nulls last, "modbusId" asc nulls last, "code" asc`,
+    `select m."id", m."code", m."name", m."isActive", m."isAuto", m."type", m."modbusId",
+            m."gatewayIp", m."gatewayPort", m."registerAddr", m."tu", m."ti",
+            t."capacityKva"
+     from "PowerMeter" m
+     left join "PowerTransformer" t on t."id" = m."transformerId"
+     where m."isActive" = true and m."isAuto" = true ${connectionFilter}
+     order by m."gatewayIp" asc nulls last, m."modbusId" asc nulls last, m."code" asc`,
   );
   return result.rows;
 }
@@ -325,11 +415,23 @@ async function closeDailyRecords() {
       continue;
     }
 
-    const isReset = currTotal < prevTotal;
+    // DUT CHUOI DO: bat CA HAI chieu (so moi thap hon HOAC cao bat thuong). Truoc day chi
+    // bat chieu xuong nen cu nhay len lot thang vao bao cao.
+    // Co `isReset` giu nguyen ten cot (khong can migration) nhung NGU NGHIA mo rong thanh
+    // "chuoi so gian doan - chua tinh tieu thu"; nguyen nhan cu the nam o `note`.
+    const discontinuity = detectDiscontinuity(meter, prevTotal, currTotal);
 
-    // Đồng hồ tụt số (nghi reset/thay/tràn): không tự tính tiêu thụ, ghi cờ + cảnh báo
-    // để người vận hành kiểm tra và nhập tay chỉ số cắt nếu cần (tránh tạo dữ liệu sai).
-    if (isReset) {
+    // Khong tu tinh tieu thu, ghi co + canh bao de nguoi van hanh kiem tra va nhap tay
+    // chi so cat neu can (tranh tao du lieu sai).
+    if (discontinuity) {
+      await logMeterEvent(meter.id, recordDate, discontinuity.kind, "daily-close", {
+        prevTotal,
+        currTotal,
+        impliedKw: discontinuity.impliedKw,
+        threshold: discontinuity.threshold,
+        note: discontinuity.note,
+      });
+
       await pool.query(
         `insert into "PowerRecord" (
            "id", "recordDate", "meterId", "dataSource", "prevTotal", "currTotal", "unitPrice", "isReset",
@@ -348,13 +450,17 @@ async function closeDailyRecords() {
            "costTotal" = 0,
            "note" = excluded."note",
            "updatedAt" = now()`,
-        [newId("record"), recordDate, meter.id, prevTotal, currTotal, unitPrice, "Nghi reset/thay đồng hồ (chỉ số mới < kỳ trước) - chưa tính tiêu thụ, cần kiểm tra & nhập tay"],
+        [newId("record"), recordDate, meter.id, prevTotal, currTotal, unitPrice, discontinuity.note],
       );
       closed += 1;
-      console.log(`[Nghi reset] ${meter.code}: chi so moi ${currTotal} < ky truoc ${prevTotal}, chua tinh tieu thu, cho kiem tra.`);
+      console.warn(
+        `[DUT CHUOI - ${discontinuity.kind}] ${meter.code}: ky truoc ${prevTotal} -> hien tai ${currTotal}. ` +
+          `Chua tinh tieu thu, cho kiem tra & nhap tay.`,
+      );
       continue;
     }
 
+    const isReset = false; // da xu ly o nhanh discontinuity ben tren
     const delta = Math.max(0, currTotal - prevTotal);
     const consTotal = delta * tu * ti;
 

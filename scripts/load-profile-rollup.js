@@ -11,7 +11,7 @@ import pg from "pg";
 // LÀM GÌ:
 //   1. Đọc PowerTelemetry (chỉ số lũy kế thô) của đồng hồ HẠ THẾ AUTO
 //   2. Lấy hiệu 2 lần đọc liên tiếp -> kWh tiêu thụ, rải vào các khoảng 30 phút
-//   3. Ghi vào PowerLoadProfile (idempotent, giữ 3 năm)
+//   3. Ghi vào PowerLoadProfile (giữ 3 năm)
 //   4. Tính lại PowerPeakMonthly cho các tháng bị ảnh hưởng (giữ vĩnh viễn)
 //   5. Dọn PowerLoadProfile quá 3 năm
 //
@@ -23,7 +23,8 @@ import pg from "pg";
 //   node load-profile-rollup.js --status             # xem tình trạng, không ghi gì
 //   node load-profile-rollup.js --no-cleanup         # bỏ qua bước dọn dữ liệu cũ
 //
-// LUÔN UPSERT: chạy lại bao nhiêu lần cũng ra cùng kết quả. Bắt buộc phải vậy vì
+// TÍNH LẠI TOÀN BỘ khoảng thời gian được yêu cầu: xóa rồi dựng lại, nên chạy lại bao
+// nhiêu lần cũng ra cùng kết quả VÀ sửa được số cũ đã ghi sai. Bắt buộc phải vậy vì
 // chắc chắn sẽ có lúc phát hiện sai công thức và cần tính lại nhiều tháng.
 // ============================================================
 
@@ -46,15 +47,40 @@ const BUCKET_MS = BUCKET_MIN * 60_000;
 const MAX_SPAN_MIN = 180;
 
 // Số phút tối thiểu một khoảng phải có dữ liệu thì mới được xét làm ĐỈNH.
-// Không dùng để loại khỏi bảng (vẫn lưu, vẫn tính vào tổng kWh) — chỉ loại khỏi việc chọn đỉnh,
-// vì khoảng thiếu dữ liệu cho ước lượng nhiễu.
+// Không dùng để loại khỏi bảng (vẫn lưu, vẫn tính vào tổng kWh) — chỉ loại khỏi việc
+// chọn đỉnh, vì khoảng thiếu dữ liệu cho ước lượng nhiễu.
 const MIN_MINUTES_FOR_PEAK = 25;
+
+// Tỷ lệ đồng hồ tối thiểu phải báo cáo thì khoảng đó mới được xét làm ĐỈNH.
+//
+// VÌ SAO KHÔNG ĐÒI ĐỦ 100%: khoảng thiếu đồng hồ chỉ làm CỘNG THIẾU -> ước lượng THẤP
+// -> khoảng đó tự nhiên không thắng khi chọn max. Nghĩa là nới lỏng là chiều AN TOÀN.
+// Ngược lại đòi đủ 100% thì chỉ cần 1 đồng hồ lỗi trong 1 khoảng là loại cả khoảng.
+// Thực tế đo được: 23 đồng hồ nhưng nhiều nhất chỉ 19 cái cùng báo cáo -> đòi đủ làm
+// tháng 7 chỉ còn 62 khoảng hợp lệ thay vì ~1400. Mất sạch dữ liệu nguy hiểm hơn nhiều
+// so với ước lượng thấp một chút.
+const PEAK_COVERAGE_RATIO = 0.8;
+
+// ----- Chặn số rác (đối xứng với chặn delta < 0) -----
+//
+// Chặn `delta < 0` bắt được đồng hồ reset LÙI. Nhưng đồng hồ cũng có thể nhảy VỌT LÊN:
+// bị thay mới, đổi nền số, hoặc đọc Modbus lỗi. Thực tế đã gặp ngày 2026-08-01: DP1 nhảy
+// từ 49.943 lên 520.208 trong 1 giờ = 470.000 kW, chiếm luôn ngôi đỉnh tháng và làm hệ
+// số phụ tải tụt còn 0,02.
+//
+// Ngưỡng TỰ HIỆU CHỈNH theo trung vị của chính đồng hồ đó, KHÔNG dùng hằng số cứng:
+// hằng số cứng sẽ lạc hậu khi nhà máy mở rộng phụ tải, và không phù hợp cho đồng hồ nhỏ.
+// Phải dùng TRUNG VỊ chứ không dùng trung bình: một giá trị rác 470.000 kW đủ sức kéo
+// trung bình lên cao đến mức chính nó lại lọt qua ngưỡng.
+const OUTLIER_MEDIAN_MULTIPLIER = 20; // gấp 20 lần mức thường ngày của chính đồng hồ đó
+const OUTLIER_FLOOR_KW = 200; // sàn, để đồng hồ tải nhỏ không bị chặn oan khi tăng tải thật
+const OUTLIER_HARD_MAX_KW = 20_000; // chặn cuối: một nhánh hạ thế không thể vượt mức này
 
 // Đường cong giữ 3 năm. PowerPeakMonthly (rất nhỏ) giữ vĩnh viễn nên câu hỏi
 // "cả năm qua tháng nào đỉnh cao nhất" vẫn trả lời được sau khi đường cong bị dọn.
 const PROFILE_RETENTION_DAYS = 365 * 3;
 
-const UPSERT_CHUNK = 500;
+const INSERT_CHUNK = 500;
 
 function newId(prefix) {
   return `${prefix}_${crypto.randomUUID()}`;
@@ -128,41 +154,95 @@ async function getLvAutoMeters() {
  * và đỉnh giả đó sẽ chiếm luôn ngôi đỉnh tháng. Chia cho Δt THỰC TẾ thì đỉnh chỉ bị
  * LÀM PHẲNG (ước lượng thấp) — sai số an toàn, không bao giờ bịa ra đỉnh không có thật.
  *
- * Trả về Map: bucketMs -> { kwh, minutes, srcGapMin }
+ * LÀM HAI LƯỢT: lượt 1 tính công suất suy ra của mọi cặp để lấy TRUNG VỊ (mức thường
+ * ngày của chính đồng hồ này); lượt 2 loại các cặp vượt ngưỡng rồi mới rải.
+ *
+ * Trả về { buckets: Map(bucketMs -> {kwh, minutes, srcGapMin}), anomalies: [...] }
  */
 function distributeIntoBuckets(readings, tu, ti) {
   const buckets = new Map();
+  const anomalies = [];
 
+  // ----- Lượt 1: lọc cặp hợp lệ và tính công suất suy ra -----
+  const pairs = [];
   for (let i = 1; i < readings.length; i++) {
     const prev = readings[i - 1];
     const curr = readings[i];
-
-    const prevMs = prev.ts;
-    const currMs = curr.ts;
-    const spanMin = (currMs - prevMs) / 60_000;
+    const spanMin = (curr.ts - prev.ts) / 60_000;
 
     if (spanMin <= 0) continue;
     if (spanMin > MAX_SPAN_MIN) continue; // gap quá dài -> để lỗ hổng, không bịa
 
     const delta = curr.energy - prev.energy;
-    if (delta < 0) continue; // đồng hồ reset/thay -> bỏ, giống logic chốt số
     if (!Number.isFinite(delta)) continue;
 
-    const kwhTotal = delta * tu * ti;
+    // Chiều XUỐNG: đồng hồ mới lắp có số thấp hơn hoặc về 0. Ghi nhận để báo, KHÔNG bỏ qua
+    // âm thầm — người vận hành cần biết chỗ nào trên đường cong bị thủng và vì sao.
+    if (delta < 0) {
+      anomalies.push({
+        kind: "RESET_DOWN",
+        at: new Date(curr.ts),
+        prevTotal: prev.energy,
+        currTotal: curr.energy,
+        impliedKw: null,
+        threshold: null,
+        spanMin,
+      });
+      continue;
+    }
+
+    const kwh = delta * tu * ti;
+    pairs.push({
+      prevMs: prev.ts,
+      currMs: curr.ts,
+      spanMin,
+      kwh,
+      impliedKw: kwh / (spanMin / 60),
+    });
+  }
+
+  if (pairs.length === 0) return { buckets, anomalies };
+
+  // Trung vị công suất = mức thường ngày của đồng hồ này.
+  const sorted = pairs.map((p) => p.impliedKw).sort((a, b) => a - b);
+  const medianKw = sorted[Math.floor(sorted.length / 2)];
+  const threshold = Math.min(
+    OUTLIER_HARD_MAX_KW,
+    Math.max(OUTLIER_FLOOR_KW, medianKw * OUTLIER_MEDIAN_MULTIPLIER),
+  );
+
+  // ----- Lượt 2: rải các cặp đạt ngưỡng -----
+  for (const pair of pairs) {
+    if (pair.impliedKw > threshold) {
+      // Ghi nhận để log to, KHÔNG âm thầm bỏ qua: đây thường là dấu hiệu đồng hồ vừa
+      // bị thay hoặc đọc Modbus sai — người vận hành cần biết để xử lý phần gốc.
+      anomalies.push({
+        kind: "JUMP_UP",
+        at: new Date(pair.currMs),
+        prevTotal: null,
+        currTotal: null,
+        impliedKw: pair.impliedKw,
+        kwh: pair.kwh,
+        spanMin: pair.spanMin,
+        threshold,
+        medianKw,
+      });
+      continue;
+    }
 
     // Cắt khoảng [prevMs, currMs) theo từng biên 30 phút, chia sản lượng theo tỷ lệ phút.
-    let cursor = prevMs;
-    while (cursor < currMs) {
+    let cursor = pair.prevMs;
+    while (cursor < pair.currMs) {
       const bucketStart = Math.floor(cursor / BUCKET_MS) * BUCKET_MS;
       const bucketEnd = bucketStart + BUCKET_MS;
-      const segEnd = Math.min(currMs, bucketEnd);
+      const segEnd = Math.min(pair.currMs, bucketEnd);
       const segMin = (segEnd - cursor) / 60_000;
 
       if (segMin > 0) {
         const entry = buckets.get(bucketStart) || { kwh: 0, minutes: 0, srcGapMin: 0 };
-        entry.kwh += (kwhTotal * segMin) / spanMin;
+        entry.kwh += (pair.kwh * segMin) / pair.spanMin;
         entry.minutes += segMin;
-        entry.srcGapMin = Math.max(entry.srcGapMin, spanMin);
+        entry.srcGapMin = Math.max(entry.srcGapMin, pair.spanMin);
         buckets.set(bucketStart, entry);
       }
 
@@ -170,15 +250,42 @@ function distributeIntoBuckets(readings, tu, ti) {
     }
   }
 
-  return buckets;
+  return { buckets, anomalies };
 }
 
-async function upsertProfiles(rows) {
-  if (rows.length === 0) return 0;
-  let written = 0;
+/** Ghi su kien dut chuoi. Idempotent nho unique key - chay lai rollup khong nhan doi. */
+async function logMeterEvent(meterId, occurredAt, kind, source, data = {}) {
+  await pool.query(
+    `insert into "PowerMeterEvent"
+       ("id", "meterId", "occurredAt", "kind", "source", "prevTotal", "currTotal",
+        "impliedKw", "threshold", "note", "acknowledged", "createdAt")
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, false, now())
+     on conflict ("meterId", "occurredAt", "kind") do update set
+       "prevTotal" = excluded."prevTotal",
+       "currTotal" = excluded."currTotal",
+       "impliedKw" = excluded."impliedKw",
+       "threshold" = excluded."threshold",
+       "note"      = excluded."note"`,
+    [
+      newId("evt"),
+      meterId,
+      occurredAt,
+      kind,
+      source,
+      data.prevTotal ?? null,
+      data.currTotal ?? null,
+      data.impliedKw ?? null,
+      data.threshold ?? null,
+      data.note ?? null,
+    ],
+  );
+}
 
-  for (let i = 0; i < rows.length; i += UPSERT_CHUNK) {
-    const chunk = rows.slice(i, i + UPSERT_CHUNK);
+async function insertProfiles(rows) {
+  if (rows.length === 0) return 0;
+
+  for (let i = 0; i < rows.length; i += INSERT_CHUNK) {
+    const chunk = rows.slice(i, i + INSERT_CHUNK);
     const values = [];
     const params = [];
     let p = 1;
@@ -188,6 +295,8 @@ async function upsertProfiles(rows) {
       params.push(newId("lp"), r.meterId, r.factoryId, r.intervalStart, r.minutes, r.kwh, r.avgKw, r.srcGapMin);
     }
 
+    // Vẫn giữ ON CONFLICT làm lưới an toàn dù đã xóa trước: nếu script bị chạy song song
+    // (hai cron chồng nhau) thì unique key vẫn chặn được bản ghi trùng.
     await pool.query(
       `insert into "PowerLoadProfile"
          ("id", "meterId", "factoryId", "intervalStart", "minutes", "kwh", "avgKw", "srcGapMin", "createdAt")
@@ -200,17 +309,16 @@ async function upsertProfiles(rows) {
          "srcGapMin" = excluded."srcGapMin"`,
       params,
     );
-    written += chunk.length;
   }
 
-  return written;
+  return rows.length;
 }
 
 async function buildLoadProfile(fromStr, toStr) {
   const meters = await getLvAutoMeters();
   if (meters.length === 0) {
     console.log("Chua co dong ho HA THE AUTO nao. Bo qua buoc dung duong cong.");
-    return { meters: 0, intervals: 0 };
+    return { meters: 0, intervals: 0, anomalies: 0 };
   }
 
   const rangeStart = vnDayStart(fromStr);
@@ -226,6 +334,7 @@ async function buildLoadProfile(fromStr, toStr) {
 
   let totalIntervals = 0;
   let metersWithData = 0;
+  let totalAnomalies = 0;
 
   for (const meter of meters) {
     const tel = await pool.query(
@@ -244,7 +353,38 @@ async function buildLoadProfile(fromStr, toStr) {
 
     const tu = Number(meter.tu ?? 1) || 1;
     const ti = Number(meter.ti ?? 1) || 1;
-    const buckets = distributeIntoBuckets(readings, tu, ti);
+    const { buckets, anomalies } = distributeIntoBuckets(readings, tu, ti);
+
+    // Cảnh báo TO + ghi vào PowerMeterEvent. Không âm thầm: người vận hành cần biết đồng hồ
+    // nào vừa bị thay / đọc sai để xử lý phần gốc, chứ không chỉ vá số liệu.
+    // Log file xoay vòng rồi mất, nên sự kiện phải vào DB để còn giải thích được về sau.
+    for (const a of anomalies) {
+      if (a.at < rangeStart || a.at >= rangeEnd) continue;
+      totalAnomalies += 1;
+
+      const detail =
+        a.kind === "RESET_DOWN"
+          ? `chi so tut tu ${a.prevTotal} xuong ${a.currTotal}`
+          : `${a.kwh.toFixed(0)} kWh trong ${a.spanMin.toFixed(0)} phut = ${a.impliedKw.toFixed(0)} kW ` +
+            `(nguong ${a.threshold.toFixed(0)} kW, muc thuong ngay ${a.medianKw.toFixed(0)} kW)`;
+
+      console.error(
+        `  [DUT CHUOI - ${a.kind}] ${meter.code} luc ${a.at.toLocaleString("vi-VN", { timeZone: TZ })}: ` +
+          `${detail}. Da BO QUA khoang nay - kiem tra xem dong ho co bi thay/reset khong.`,
+      );
+
+      await logMeterEvent(meter.id, a.at, a.kind, "rollup", {
+        prevTotal: a.prevTotal,
+        currTotal: a.currTotal,
+        impliedKw: a.impliedKw,
+        threshold: a.threshold,
+        note:
+          a.kind === "RESET_DOWN"
+            ? "Đồng hồ tụt số (nghi thay đồng hồ mới) - khoảng này không tính vào đường cong phụ tải"
+            : `Chỉ số nhảy vọt (nghi thay đồng hồ đã dùng nơi khác) - suy ra ${Math.round(a.impliedKw)} kW, ` +
+              `vượt ngưỡng ${Math.round(a.threshold)} kW. Khoảng này không tính vào đường cong phụ tải`,
+      });
+    }
 
     const rows = [];
     for (const [bucketMs, v] of buckets) {
@@ -264,21 +404,34 @@ async function buildLoadProfile(fromStr, toStr) {
       });
     }
 
+    // XÓA TRƯỚC KHI GHI, không chỉ upsert. Lý do: nếu lần chạy trước ghi ra một khoảng
+    // mà lần này logic mới loại bỏ (vd cặp số rác vừa bị chặn), upsert sẽ KHÔNG đụng tới
+    // dòng cũ -> số sai nằm lại vĩnh viễn. Xóa rồi dựng lại làm rollup thực sự là nguồn
+    // sự thật cho khoảng thời gian nó xử lý, và cho phép sửa số cũ bằng cách chạy lại.
+    await pool.query(
+      `delete from "PowerLoadProfile"
+       where "meterId" = $1 and "intervalStart" >= $2 and "intervalStart" < $3`,
+      [meter.id, rangeStart, rangeEnd],
+    );
+
     if (rows.length > 0) {
-      await upsertProfiles(rows);
+      await insertProfiles(rows);
       totalIntervals += rows.length;
       metersWithData += 1;
     }
   }
 
   console.log(`  -> ${totalIntervals} khoang cua ${metersWithData}/${meters.length} dong ho.`);
-  return { meters: metersWithData, intervals: totalIntervals };
+  if (totalAnomalies > 0) {
+    console.error(`  -> CANH BAO: da bo qua ${totalAnomalies} khoang co so rac (xem chi tiet ben tren).`);
+  }
+  return { meters: metersWithData, intervals: totalIntervals, anomalies: totalAnomalies };
 }
 
 // ---------- Bước 2: chốt đỉnh tháng ----------
 
 /**
- * ĐỈNH CỦA TỔNG ≠ TỔNG CÁC ĐỈNH.
+ * ĐỈNH CỦA TỔNG != TỔNG CÁC ĐỈNH.
  * Phải CỘNG tất cả đồng hồ theo từng khoảng 30 phút TRƯỚC (group by intervalStart),
  * rồi mới lấy max của chuỗi tổng đó. Cộng các giá trị đỉnh riêng lẻ của từng nhánh
  * sẽ ra con số không bao giờ tồn tại trong thực tế.
@@ -321,13 +474,12 @@ async function computeMonthlyPeak(factoryId, year, month) {
   const totalKwh = rows.reduce((s, r) => s + r.kwh, 0);
 
   // Số đồng hồ báo cáo đông nhất trong tháng = "đầy đủ". Tự hiệu chỉnh theo thực tế,
-  // không cần khai báo cứng đồng hồ nào phải có.
+  // không cần khai báo cứng đồng hồ nào phải có (đồng hồ lắp thêm/tháo ra không phải sửa code).
   const fullMeterCount = rows.reduce((mx, r) => Math.max(mx, r.meterCount), 0);
+  const minMeterCount = Math.max(1, Math.round(fullMeterCount * PEAK_COVERAGE_RATIO));
 
-  // Chỉ khoảng ĐỦ đồng hồ và ĐỦ phút mới được xét làm đỉnh: khoảng thiếu đồng hồ cộng
-  // thiếu (tưởng tải thấp), khoảng thiếu phút cho ước lượng nhiễu.
   const eligible = rows.filter(
-    (r) => r.meterCount === fullMeterCount && r.minMinutes >= MIN_MINUTES_FOR_PEAK,
+    (r) => r.meterCount >= minMeterCount && r.minMinutes >= MIN_MINUTES_FOR_PEAK,
   );
 
   if (eligible.length === 0) return null;
@@ -371,6 +523,7 @@ async function computeMonthlyPeak(factoryId, year, month) {
     meterCount: peak.meterCount,
     intervalCount: eligible.length,
     isMonthClosed: end.getTime() <= Date.now(),
+    fullMeterCount,
   };
 }
 
@@ -423,7 +576,8 @@ async function rollupMonths(monthKeys) {
       console.log(
         `  [${factory.code}] ${year}-${String(month).padStart(2, "0")}: dinh ${result.peakKw} kW ` +
           `luc ${result.peakAt.toLocaleString("vi-VN", { timeZone: TZ })}, ` +
-          `he so phu tai ${result.loadFactor.toFixed(2)}, ${result.intervalCount} khoang (${closedTag})`,
+          `LF ${result.loadFactor.toFixed(2)}, ${result.intervalCount} khoang, ` +
+          `${result.meterCount}/${result.fullMeterCount} dong ho tai dinh (${closedTag})`,
       );
     }
   }
@@ -486,7 +640,8 @@ async function printStatus() {
   console.log(`PowerPeakMonthly  : ${peaks.rows[0].rows} dong`);
 
   const recent = await pool.query(
-    `select f."code", pm."year", pm."month", pm."peakKw", pm."peakAt", pm."loadFactor", pm."isMonthClosed"
+    `select f."code", pm."year", pm."month", pm."peakKw", pm."peakAt", pm."loadFactor",
+            pm."meterCount", pm."intervalCount", pm."isMonthClosed"
      from "PowerPeakMonthly" pm
      join "Factory" f on f."id" = pm."factoryId"
      order by pm."year" desc, pm."month" desc, f."code" asc
@@ -498,7 +653,24 @@ async function printStatus() {
       console.log(
         `  ${r.code} ${r.year}-${String(r.month).padStart(2, "0")}: ${Number(r.peakKw).toFixed(1)} kW ` +
           `luc ${new Date(r.peakAt).toLocaleString("vi-VN", { timeZone: TZ })} ` +
-          `| LF ${Number(r.loadFactor).toFixed(2)}${r.isMonthClosed ? "" : " (dang chay)"}`,
+          `| LF ${Number(r.loadFactor).toFixed(2)} | ${r.meterCount} dong ho | ` +
+          `${r.intervalCount} khoang${r.isMonthClosed ? "" : " (dang chay)"}`,
+      );
+    }
+  }
+
+  // Soi nhanh xem còn số rác nào lọt lưới không.
+  const top = await pool.query(
+    `select m."code", p."intervalStart", p."avgKw"
+     from "PowerLoadProfile" p join "PowerMeter" m on m."id" = p."meterId"
+     order by p."avgKw" desc limit 5`,
+  );
+  if (top.rowCount > 0) {
+    console.log("\nTop 5 khoang kW cao nhat (soi so rac con sot):");
+    for (const r of top.rows) {
+      console.log(
+        `  ${String(r.code).padEnd(14)} ${new Date(r.intervalStart).toLocaleString("vi-VN", { timeZone: TZ }).padEnd(22)} ` +
+          `${Number(r.avgKw).toFixed(1)} kW`,
       );
     }
   }

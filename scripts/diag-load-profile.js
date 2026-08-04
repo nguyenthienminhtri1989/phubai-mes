@@ -160,15 +160,16 @@ async function main() {
   // ---------- 7. Cong suat dinh muc MBA de doi chieu ----------
   console.log("\n=== 7. CONG SUAT DINH MUC MAY BIEN AP ===");
   const tf = await pool.query(
-    `select f."code" as factory, t."name", t."ratedCapacity"
+    `select f."code" as factory, t."name", t."capacityKva"
      from "PowerTransformer" t
      left join "Factory" f on f."id" = t."factoryId"
+     where t."isActive" = true
      order by f."code", t."name"`,
   );
   const capByFactory = new Map();
   for (const r of tf.rows) {
-    console.log(`  ${String(r.factory || "?").padEnd(6)} ${String(r.name).padEnd(28)} ${r.ratedCapacity ?? "?"} kVA`);
-    if (r.factory) capByFactory.set(r.factory, (capByFactory.get(r.factory) || 0) + Number(r.ratedCapacity || 0));
+    console.log(`  ${String(r.factory || "?").padEnd(6)} ${String(r.name).padEnd(28)} ${r.capacityKva ?? "?"} kVA`);
+    if (r.factory) capByFactory.set(r.factory, (capByFactory.get(r.factory) || 0) + Number(r.capacityKva || 0));
   }
   console.log("\n  Tong dinh muc moi nha may (dinh kW phai THAP HON con so nay):");
   for (const [k, v] of capByFactory) console.log(`    ${k}: ${v} kVA`);

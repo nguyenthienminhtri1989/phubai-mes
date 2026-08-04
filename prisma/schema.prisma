@@ -164,6 +164,7 @@ model PowerMeter {
   records       PowerRecord[]
   telemetry     PowerTelemetry[]
   loadProfiles  PowerLoadProfile[]
+  events        PowerMeterEvent[]
   powerFactors  PowerFactorLog[]
   liveReading   PowerLiveReading?
 
@@ -328,6 +329,47 @@ model PowerPeakMonthly {
 
   @@unique([factoryId, year, month])
   @@index([year, month]) // so sanh cac nha may trong cung ky
+}
+
+// Su kien lam DUT CHUOI do cua mot dong ho (thay dong ho, reset, doc Modbus sai).
+//
+// KHAI NIEM: khi trao dong ho, so luy ke cua thiet bi MOI khong co quan he gi voi thiet bi CU.
+// No co the THAP hon / ve 0 (dong ho moi tinh), CAO hon (dong ho da dung o vi tri khac), hoac
+// tinh co gan bang (nguy hiem nhat - khong phat hien duoc). Ca ba deu la CUNG MOT su kien:
+// chuoi do bi dut. Hieu so vat qua diem dut la VO NGHIA - no la hieu cua HAI THIET BI KHAC NHAU,
+// khong phai "sai mot chut".
+//
+// Truoc day he thong chi biet khai niem "reset" (chi bat chieu XUONG) nen cu nhay LEN lot thang
+// vao bao cao: 2026-08-01 DP1 nhay tu 49.943 len 520.208 -> 470.000 kWh gia vao PowerRecord,
+// keo lech toan bo phan bo chi phi thang 8.
+//
+// VI SAO CAN BANG NAY (log file khong du): log xoay vong roi mat. Ba thang sau nhin bieu do
+// phu tai thay thung mot lo ngay 1/8, khong ai nho vi sao. Bang nay giu vinh vien (rat nho),
+// cho phep hien dau moc "thay dong ho" ngay tren duong cong va tra loi duoc cau "tai sao cho
+// nay khong co so".
+model PowerMeterEvent {
+  id           String     @id @default(cuid())
+  meterId      String
+  occurredAt   DateTime   @db.Timestamptz // thoi diem phat hien dut chuoi
+  // RESET_DOWN = so moi thap hon/ve 0 | JUMP_UP = so moi cao bat thuong
+  // GAP        = mat du lieu qua lau   | REPLACED = nguoi van hanh tu khai bao thay dong ho
+  kind         String
+  source       String // daily-close | rollup | manual
+  prevTotal    Float? // chi so truoc khi dut
+  currTotal    Float? // chi so sau khi dut
+  impliedKw    Float? // cong suat suy ra (de thay muc do vo ly)
+  threshold    Float? // nguong da dung de phat hien, luu lai de sau nay hieu vi sao bi bat
+  note         String?
+  // Nguoi van hanh danh dau da xu ly/da biet. KHONG tu dong xoa su kien - giu lai lam
+  // dau vet kiem toan, chi danh dau la da giai quyet.
+  acknowledged Boolean    @default(false)
+  createdAt    DateTime   @default(now())
+  meter        PowerMeter @relation(fields: [meterId], references: [id], onDelete: Cascade)
+
+  // Chay lai rollup/cron KHONG duoc nhan doi su kien.
+  @@unique([meterId, occurredAt, kind])
+  @@index([meterId, occurredAt])
+  @@index([occurredAt])
 }
 
 model ElectricityPrice {
