@@ -2595,6 +2595,10 @@ export function ElectricDailyInputClient() {
         currTotal: meter.todayRecord?.currTotal ?? undefined,
         unitPrice: meter.todayRecord?.unitPrice ?? undefined,
         isReset: meter.todayRecord?.isReset ?? false,
+        // Mở lại bản ghi thay đồng hồ: prefill sản lượng đã nhập (consTotal) để không mất khi sửa.
+        manualConsTotal: meter.todayRecord?.isReset
+          ? (meter.todayRecord?.consTotal ?? undefined)
+          : undefined,
         note: meter.todayRecord?.note ?? undefined,
       });
     }
@@ -2672,15 +2676,18 @@ export function ElectricDailyInputClient() {
     !(Number(watchedValues?.prevTotal || 0) > 0);
   const lowVoltageDelta =
     currentMeter?.type !== 2
-      ? lvBaseline || watchedValues?.isReset
+      ? lvBaseline
         ? 0
-        : Math.max(
-            0,
-            Number(watchedValues?.currTotal || 0) -
-              Number(watchedValues?.prevTotal || 0),
-          ) *
-          (currentMeter?.tu || 1) *
-          (currentMeter?.ti || 1)
+        : watchedValues?.isReset
+          ? // Thay đồng hồ: tiêu thụ ngày này = sản lượng nhập tay, không phải hiệu curr-prev.
+            Number(watchedValues?.manualConsTotal || 0)
+          : Math.max(
+              0,
+              Number(watchedValues?.currTotal || 0) -
+                Number(watchedValues?.prevTotal || 0),
+            ) *
+            (currentMeter?.tu || 1) *
+            (currentMeter?.ti || 1)
       : 0;
   const mediumVoltageDelta =
     currentMeter?.type === 2
@@ -3456,21 +3463,34 @@ export function ElectricDailyInputClient() {
             <>
               <Form.Item
                 name="isReset"
-                label="Reset / thay đồng hồ"
+                label="Thay đồng hồ / reset"
                 valuePropName="checked"
+                tooltip="Bật khi thay đồng hồ mới. Ngày này sẽ KHÔNG lấy hiệu chỉ số (2 thiết bị khác nhau): nhập sản lượng đến lúc thay ở ô bên dưới, còn ô 'Chỉ số sau' đổi thành chỉ số ĐẦU của đồng hồ mới (mốc gốc cho kỳ sau)."
               >
                 <Switch />
               </Form.Item>
               <Row gutter={12}>
                 <Col xs={24} md={8}>
-                  <Form.Item name="prevTotal" label="Chỉ số trước">
+                  <Form.Item
+                    name="prevTotal"
+                    label="Chỉ số trước"
+                    tooltip={
+                      watchedValues?.isReset
+                        ? "Chỉ số kỳ trước của đồng hồ CŨ. Nếu đồng hồ mới có số tồn quá lớn thì cứ để nguyên - ngày thay không lấy hiệu số này."
+                        : undefined
+                    }
+                  >
                     <InputNumber min={0} style={{ width: "100%" }} />
                   </Form.Item>
                 </Col>
                 <Col xs={24} md={8}>
                   <Form.Item
                     name="currTotal"
-                    label="Chỉ số sau"
+                    label={
+                      watchedValues?.isReset
+                        ? "Chỉ số đầu đồng hồ mới"
+                        : "Chỉ số sau"
+                    }
                     rules={[{ required: true }]}
                   >
                     <InputNumber min={0} style={{ width: "100%" }} />
@@ -3482,6 +3502,15 @@ export function ElectricDailyInputClient() {
                   </Form.Item>
                 </Col>
               </Row>
+              {watchedValues?.isReset ? (
+                <Form.Item
+                  name="manualConsTotal"
+                  label="Sản lượng đã dùng đến lúc thay (kWh)"
+                  tooltip="Sản lượng đồng hồ CŨ đã chạy từ kỳ trước đến khi tháo, đã ×TU×TI. Để trống nếu không tính tiêu thụ cho ngày này (ghi 0)."
+                >
+                  <InputNumber min={0} style={{ width: "100%" }} />
+                </Form.Item>
+              ) : null}
             </>
           )}
           <Form.Item name="note" label="Ghi chú sự cố / lý do nhập tay">

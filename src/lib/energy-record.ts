@@ -32,6 +32,13 @@ export async function buildPowerRecordValues(input: {
   currPeak?: number;
   currOffPeak?: number;
   unitPrice?: number;
+  // Người vận hành CHỦ ĐỘNG khai báo thay đồng hồ (nút toggle ở trang nhập tay). Chỉ áp dụng
+  // cho đồng hồ Hạ thế (type=1). Khác với reset tự phát hiện (curr < prev), cờ này cho phép
+  // đánh dấu thay đồng hồ NGAY CẢ khi số mới CAO hơn (đem đồng hồ nơi khác tới).
+  isReset?: boolean;
+  // Sản lượng đồng hồ CŨ đã chạy đến thời điểm thay (kWh, đã quy đổi tu/ti), người vận hành
+  // nhập tay. Lưu thẳng vào consTotal của bản ghi ngày thay; bỏ trống = 0 (không tính tiêu thụ).
+  manualConsTotal?: number;
 }) {
   const meter = await prisma.powerMeter.findUniqueOrThrow({
     where: { id: input.meterId },
@@ -166,19 +173,29 @@ export async function buildPowerRecordValues(input: {
   }
 
   const previous = input.prevTotal ?? lastRecord?.currTotal ?? 0;
-  const isReset = currTotal < previous;
 
-  // Đồng hồ tụt số (nghi bị reset/thay/tràn): KHÔNG tự tính tiêu thụ để tránh dữ liệu sai.
-  // Ghi cờ + cảnh báo để người vận hành kiểm tra và nhập tay chỉ số cắt nếu cần.
+  // Thay đồng hồ: hoặc người vận hành CHỦ ĐỘNG bật cờ (input.isReset), hoặc số mới tụt so kỳ
+  // trước (curr < prev). Cả hai đều là "đứt chuỗi đo" - KHÔNG lấy hiệu curr-prev vì đó là hiệu
+  // của HAI thiết bị khác nhau (vô nghĩa). Cờ chủ động còn bắt được ca số mới CAO hơn (đem
+  // đồng hồ nơi khác tới) mà nhánh tự phát hiện curr<prev bỏ lọt.
+  const isReset = Boolean(input.isReset) || currTotal < previous;
+
   if (isReset) {
+    // consTotal = sản lượng đồng hồ CŨ đã dùng đến lúc thay (người vận hành nhập tay, kWh);
+    // bỏ trống = 0 (giữ hành vi cũ). currTotal lưu lại = chỉ số ĐẦU của đồng hồ MỚI, sẽ thành
+    // MỐC GỐC để kỳ sau lấy hiệu bình thường.
+    const consTotal = Math.max(0, input.manualConsTotal ?? 0);
     return {
       prevTotal: previous,
       currTotal,
       unitPrice,
       isReset: true,
-      consTotal: 0,
-      costTotal: 0,
-      note: RESET_NOTE,
+      consTotal,
+      costTotal: consTotal * unitPrice,
+      note:
+        input.manualConsTotal != null
+          ? `Thay đồng hồ - sản lượng đến lúc thay ${consTotal} kWh (nhập tay); chỉ số đầu đồng hồ mới ${currTotal}`
+          : RESET_NOTE,
     };
   }
 

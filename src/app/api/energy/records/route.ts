@@ -171,6 +171,9 @@ export async function POST(request: NextRequest) {
   const optionalNumber = (value: unknown) =>
     value === undefined || value === null || value === "" ? undefined : Number(value);
 
+  // Chỉ áp dụng cơ chế "thay đồng hồ" (cờ + sản lượng nhập tay) cho đồng hồ Hạ thế (type=1).
+  const isMeterReplacement = meter.type !== 2 && Boolean(body.isReset);
+
   const values = await buildPowerRecordValues({
     meterId,
     recordDate,
@@ -180,6 +183,8 @@ export async function POST(request: NextRequest) {
     currPeak: optionalNumber(body.currPeak),
     currOffPeak: optionalNumber(body.currOffPeak),
     unitPrice: optionalNumber(body.unitPrice),
+    isReset: isMeterReplacement,
+    manualConsTotal: isMeterReplacement ? optionalNumber(body.manualConsTotal) : undefined,
   });
 
   const data = await prisma.powerRecord.upsert({
@@ -205,6 +210,32 @@ export async function POST(request: NextRequest) {
       meter: true,
     },
   });
+
+  // Người vận hành chủ động khai báo thay đồng hồ: ghi 1 sự kiện REPLACED để lưu vết VĨNH VIỄN
+  // (PowerRecord.note có thể bị ghi đè khi nhập lại; bảng sự kiện thì không). Đồng bộ với đường
+  // AUTO (daily-close ghi RESET_DOWN/JUMP_UP). Idempotent theo (meterId, occurredAt, kind).
+  if (isMeterReplacement) {
+    await prisma.powerMeterEvent.upsert({
+      where: {
+        meterId_occurredAt_kind: { meterId, occurredAt: recordDate, kind: "REPLACED" },
+      },
+      update: {
+        source: "manual",
+        prevTotal: values.prevTotal,
+        currTotal: values.currTotal,
+        note: values.note ?? null,
+      },
+      create: {
+        meterId,
+        occurredAt: recordDate,
+        kind: "REPLACED",
+        source: "manual",
+        prevTotal: values.prevTotal,
+        currTotal: values.currTotal,
+        note: values.note ?? null,
+      },
+    });
+  }
 
   return NextResponse.json(data);
 }
