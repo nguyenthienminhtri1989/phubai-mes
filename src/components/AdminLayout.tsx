@@ -4,6 +4,7 @@ import {
   ApiOutlined,
   BarChartOutlined,
   BulbOutlined,
+  CloudDownloadOutlined,
   CloudOutlined,
   CloseOutlined,
   DashboardOutlined,
@@ -125,6 +126,10 @@ const pageTitle: Record<string, { label: string; icon: ReactNode }> = {
     icon: <DatabaseOutlined />,
   },
   "/electric/users": { label: "Quản lý người dùng", icon: <TeamOutlined /> },
+  "/electric/backup": {
+    label: "Sao lưu & phục hồi",
+    icon: <CloudDownloadOutlined />,
+  },
   "/mobile/daily-input": {
     label: "Nhập số (Mobile)",
     icon: <MobileOutlined />,
@@ -246,6 +251,11 @@ function buildMenuItems(role?: string): MenuProps["items"] {
                 key: "/electric/users",
                 icon: <TeamOutlined />,
                 label: "Người dùng",
+              },
+              {
+                key: "/electric/backup",
+                icon: <CloudDownloadOutlined />,
+                label: "Sao lưu & phục hồi",
               },
             ],
           },
