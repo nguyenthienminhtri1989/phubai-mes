@@ -874,3 +874,41 @@ Ca hai deu khong dung hang so cung -> nha may mo rong phu tai hay lap them MBA k
 - Chua co form khai bao THU CONG "da thay dong ho ngay X, chi so cat Y". Bang `PowerMeterEvent` da co san `kind=REPLACED` + `source=manual` cho viec nay. Can thiet vi truong hop dong ho moi TINH CO co chi so gan bang dong ho cu thi KHONG the phat hien tu dong.
 - Chua co canh bao Telegram "cong suat dang tien gan dinh thang truoc" (doc `PowerLiveReading` cong lai so voi `PowerPeakMonthly`). Day moi la luc peak shaving thanh HANH DONG thay vi chi la bao cao.
 - Chua kiem tra portal CSKH EVN co endpoint bieu do phu tai theo gio khong.
+
+## 2026-08-05 - Khai bao THU CONG thay dong ho (type 1) + va loi 2 ban ghi lech moc gio
+
+### Current State Update
+
+- `/electric/daily-input` (dong ho HA THE type=1): nut toggle "Thay dong ho / reset" trong modal GIO CO tac dung o backend. Truoc day toggle chi anh huong validation phia client (go rao chan khi `curr < prev`), con backend BO QUA `isReset` gui len va chi tu phat hien reset khi `currTotal < previous`. Khi bat toggle:
+  - O "Chi so sau" doi nhan thanh "Chi so dau dong ho moi" = MOC GOC cho ky sau.
+  - Hien them o "San luong da dung den luc thay (kWh)" -> luu thang vao `consTotal` ngay thay; bo trong = 0.
+  - O "Chi so truoc" giu nguyen; dong ho moi co so ton QUA LON thi cu de nguyen (ngay thay khong lay hieu curr-prev nen khong con so khong lo lot vao bao cao).
+- Moi lan khai bao thay dong ho ghi 1 dong `PowerMeterEvent` kind=REPLACED, source=manual (nhat ky vinh vien, khong bi ghi de nhu `PowerRecord.note`), dong bo voi duong AUTO (daily-close ghi RESET_DOWN/JUMP_UP).
+
+### Business Rules Update
+
+**Thay dong ho type 1 qua nhap tay (`buildPowerRecordValues`):**
+- Dieu kien reset mo rong: `isReset = Boolean(input.isReset) || currTotal < previous`. Co chu dong (toggle) bat duoc CA ca so moi CAO hon (dem dong ho noi khac toi) ma nhanh tu phat hien `curr < prev` bo lot.
+- Khi reset: `consTotal = Math.max(0, manualConsTotal ?? 0)` = san luong dong ho CU den luc thay, nguoi van hanh nhap THANG bang kWh (DA quy doi tu/ti, backend KHONG nhan lai he so). `currTotal` luu = chi so dau dong ho MOI -> moc goc ky sau lay hieu binh thuong. `costTotal = consTotal * unitPrice`.
+- CHI ap dung type 1. Type 2 (trung the 3 khung gia) chua lam.
+- POST `/api/energy/records` (route ma `/api/electric/daily-input` re-export) chi truyen `isReset`/`manualConsTotal` khi `meter.type !== 2 && body.isReset`, va ghi `PowerMeterEvent` REPLACED tuong ung. Preview `lowVoltageDelta` va prefill khi mo lai ban ghi da cap nhat theo.
+
+**BAY LECH MOC GIO `recordDate` (`timestamp WITHOUT time zone`) giua Prisma va pg driver:**
+- Nhap tay ghi qua Prisma -> serialize theo UTC -> luu bare `05:00` -> doc lai `05:00Z`.
+- Chot so AUTO ghi qua pg driver trong `energy-cron.js` -> serialize theo gio LOCAL VN cua tien trinh (UTC+7) -> luu bare `12:00` -> doc lai `12:00Z`.
+- Cung 1 thoi diem thuc (05:00Z = 12:00 VN) nhung gia tri LUU lech 7 gio. Khoa duy nhat `(recordDate, meterId)` so khop CHINH XAC timestamp, nen `upsert` moc 05:00Z KHONG de duoc ban AUTO 12:00Z -> sinh 2 ban/ngay. `meter-trend` va cac bao cao loc theo KHOANG NGAY VN nen bat CA HAI roi CONG DON -> so bi nhan doi (thuc te 2026-08-01 DP1: ban AUTO ~500.000 + ban manual ~17.000 van hien >500.000 tren `/electric/meter-trend`).
+- VA: POST `/api/energy/records` truoc khi `upsert` chay `deleteMany` moi ban CUNG NGAY VN nhung khac moc gio (`recordDate` trong `[vnDayStart, vnNextDayStart)` VA `NOT: { recordDate }` hien tai). Dam bao nhap tay luon de lai dung 1 ban/ngay va DE duoc ban AUTO. VO HAI voi dong ho MANUAL (von chi co san ban 05:00Z -> khong co ban khac moc de xoa).
+- Va CHI don khi co LAN NHAP TAY MOI cho ngay do; du lieu trung co san (nhu DP1 1/8) phai don rieng: nhap lai ngay do roi luu, HOAC chay SQL DELETE ban AUTO thua.
+
+### Feature Ledger Update
+
+| Ngay | Thay doi | File chinh | Verify |
+| --- | --- | --- | --- |
+| 2026-08-05 | Toggle "thay dong ho" type 1 co tac dung backend: nhap tay san luong den luc thay (`manualConsTotal` -> `consTotal`), `currTotal` = chi so dau dong ho moi (moc goc ky sau), ghi `PowerMeterEvent` REPLACED source=manual. KHONG doi schema -> khong can migration/generate. | `src/lib/energy-record.ts`, `src/app/api/energy/records/route.ts`, `src/components/electric/ElectricClients.tsx` | `npm run build`; mo `/electric/daily-input`, bat toggle o dong ho ha the, kiem tra o san luong + nhan "Chi so dau dong ho moi" |
+| 2026-08-05 | Va loi 2 ban ghi/ngay do lech moc gio `recordDate` (Prisma 05:00Z vs pg driver 12:00Z): POST xoa ban cung ngay VN khac moc TRUOC khi upsert. | `src/app/api/energy/records/route.ts` | `npm run build`; sua tay 1 dong ho AUTO roi mo `/electric/meter-trend` xac nhan khong con cong don |
+
+### Open Decisions (cap nhat)
+
+- DA GIAI QUYET (mot phan) Open Decision 2026-08-04 "chua co form khai bao THU CONG thay dong ho": da co cho type 1 qua toggle + o san luong + ghi PowerMeterEvent REPLACED. Type 2 (MV 3 khung gia) van CHUA co.
+- Truong hop dong ho moi TINH CO co chi so gan bang dong ho cu (khong the phat hien tu dong) van phai dua vao nguoi van hanh CHU DONG bat toggle.
+- Chua chuan hoa 2 duong ghi ve CUNG mot moc gio `recordDate` (hien chi va bang cach xoa ban khac moc luc nhap tay). Muon triet de can migration doi het ban cu ve 1 moc + sua ca `energy-cron.js` lan Prisma path cho nhat quan.

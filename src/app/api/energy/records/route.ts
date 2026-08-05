@@ -187,6 +187,23 @@ export async function POST(request: NextRequest) {
     manualConsTotal: isMeterReplacement ? optionalNumber(body.manualConsTotal) : undefined,
   });
 
+  // Nhập tay lưu recordDate mốc 05:00Z (Prisma/UTC), còn bản chốt AUTO do energy-cron ghi qua pg
+  // driver lưu 12:00Z (giờ local VN). Vì khóa (recordDate, meterId) so khớp CHÍNH XÁC timestamp
+  // nên upsert 05:00Z KHÔNG đè được bản AUTO 12:00Z -> sinh 2 bản/ngày, khiến meter-trend & báo cáo
+  // cộng dồn. Xoá mọi bản CÙNG NGÀY VN nhưng khác mốc giờ trước khi ghi, để nhập tay luôn để lại
+  // đúng 1 bản/ngày và đè được bản AUTO. Vô hại với đồng hồ MANUAL (vốn chỉ có sẵn bản 05:00Z).
+  const recordDateStr =
+    typeof body.recordDate === "string"
+      ? body.recordDate.slice(0, 10)
+      : recordDate.toISOString().slice(0, 10);
+  await prisma.powerRecord.deleteMany({
+    where: {
+      meterId,
+      recordDate: { gte: vnDayStart(recordDateStr), lt: vnNextDayStart(recordDateStr) },
+      NOT: { recordDate },
+    },
+  });
+
   const data = await prisma.powerRecord.upsert({
     where: {
       recordDate_meterId: {
